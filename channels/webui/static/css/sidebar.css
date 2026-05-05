@@ -410,7 +410,7 @@
 .chat-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
 }
 
 .chat-item {
@@ -426,6 +426,8 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    max-height: 10rem;
+    flex-shrink: 0;
 }
 
 .chat-item:hover {
@@ -471,6 +473,7 @@
     font-size: 0.75rem;
     color: var(--text-muted);
     display: flex;
+    margin-top: auto;
     justify-content: space-between;
     align-items: center;
 }

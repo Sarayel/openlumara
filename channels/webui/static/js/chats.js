@@ -845,7 +845,7 @@ async function updateTokenUsage() {
 
             // 1. Always update the numbers and the width
             fill.style.width = `${Math.min(percentage, 100)}%`;
-            text.textContent = `${data.current.toLocaleString()} / ${data.max.toLocaleString()}`;
+            text.textContent = `Tokens: ${data.current.toLocaleString()} / ${data.max.toLocaleString()}`;
 
             // 2. Handle "Notification" (Visual Prominence)
             if (percentage >= NOTIFY_THRESHOLD) {

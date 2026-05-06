@@ -627,7 +627,8 @@ def stream_message():
 
                     token_queue.put(token_data)
             except Exception as e:
-                token_queue.put(('error', {'error': 'exception', 'message': str(e)}))
+                err_msg = core.detail_error(e) if core.debug else e
+                token_queue.put(('error', {'error': 'exception', 'message': f"error while receiving response from AI: {err_msg}"}))
             finally:
                 token_queue.put(done)
 

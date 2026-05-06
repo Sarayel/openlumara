@@ -297,8 +297,9 @@ class APIClient():
                         await response.close()
                     return
 
-                if core.debug:
-                    print(chunk)
+                # uncomment if trying to see token stream chunks
+                # if core.debug:
+                #     print(chunk)
 
                 if chunk.choices:
                     streamed_token = chunk.choices[0].delta

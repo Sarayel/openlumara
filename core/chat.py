@@ -310,8 +310,7 @@ class Chat:
         index = len(self.data[self.current]["messages"]) - 1
 
         await self.save()
-        return index
-
+        return True
 
     async def pop(self, index: int = None):
         """pop message from current chat"""

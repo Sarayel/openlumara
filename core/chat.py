@@ -274,6 +274,24 @@ class Chat:
         if self.current is None:
             await self.new()
 
+        await self._insert_blank_user_msg(message)
+
+        # ensure message does not exceed token limits
+        max_tokens = int(core.config.get("api").get("max_context", 8192))
+        
+        # create a potential new message list to check token count
+        current_messages = self.data[self.current].get("messages", [])
+        potential_messages = list(current_messages)
+
+        potential_messages.append(message)
+        
+        # calculate tokens for this potential list
+        new_token_count = await self.count_tokens(messages=potential_messages)
+
+        if new_token_count > max_tokens:
+            await self.channel.announce(f"Your request exceeds the max amount of tokens allowed! It was {new_token_count} tokens out of {max_tokens} tokens allowed.")
+            return False
+
         if not self.data[self.current]["title"].strip():
             # auto-set title
             msg_content = self.channel._extract_content(message)
@@ -288,12 +306,12 @@ class Chat:
         if ghost:
             message["ghost"] = True
 
-        await self._insert_blank_user_msg(message)
         self.data[self.current]["messages"].append(message)
         index = len(self.data[self.current]["messages"]) - 1
 
         await self.save()
         return index
+
 
     async def pop(self, index: int = None):
         """pop message from current chat"""

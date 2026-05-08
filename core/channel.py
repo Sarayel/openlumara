@@ -94,7 +94,9 @@ class Channel:
                 return {"role": "assistant", "content": self._get_disconnection_message()}
 
         # add sent message to context
-        await self.context.chat.add(message)
+        add_success = await self.context.chat.add(message)
+        if not add_success:
+            return None
 
         # run module event hooks
         for module_name, module in self.manager.modules.items():
@@ -199,7 +201,9 @@ class Channel:
                 return
 
         # add user's message to context
-        await self.context.chat.add(user_message)
+        add_success = await self.context.chat.add(user_message)
+        if not add_success:
+            return
 
         # estimate tokens used for user message
         user_message_token_estimation = 0

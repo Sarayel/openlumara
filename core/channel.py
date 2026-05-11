@@ -563,13 +563,15 @@ class Channel:
 
             # # collapse consecutive newlines
             try:
+                # format the reasoning to look all fancy
+                if show_reasoning:
+                    newline_str = "\n" if not currently_reasoning else "\n> "
+                else:
+                    newline_str = "\n"
+
                 # collapse more than 2 newlines to just 2
                 content = re.sub(r'\n{3,}', '\n\n', content)
                 content = content.replace("\n", newline_str)
-
-                if show_reasoning:
-                    # format the reasoning to look all fancy
-                    newline_str = "\n" if not currently_reasoning else "\n> "
             except:
                 pass
 

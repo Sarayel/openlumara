@@ -27,7 +27,7 @@ class Client(discord.Client):
             async for token in token_stream:
                 word = token.get("content")
 
-                if not word:
+                if not word or not isinstance(word, str):
                     # wtf
                     continue
 
@@ -36,26 +36,19 @@ class Client(discord.Client):
                 message_content_str = "".join(message_content)
                 char_limit_exceeded = len(message_content_str) > MAX_CHARS
 
-                # if tokens exceed limit, add a new message to target for the edits
-                if len(message_content) >= CHUNK_SIZE:
-                    core.log("discord", f"<{message_obj.guild.me.name}> {message_content_str}")
-                    message_obj = await discord_channel.send("...")
-                    message_content = [word]
-
-                # edit message every few seconds
+                # edit message every few seconds or if token limit reached
                 if datetime.datetime.now() >= next_edit_time or len(message_content) >= CHUNK_SIZE:
                     try:
-                        await message_obj.edit(content=message_content_str)
-                        next_edit_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
-                    except:
-                        # fuck off
-                        core.log("discord", f"<{message_obj.guild.me.name}> {message_content_str}")
-                        message_obj = await discord_channel.send("...")
-                        await message_obj.edit(content=message_content_str)
+                        if len(message_content) >= CHUNK_SIZE:
+                            message_content = []
+                            message_obj = await discord_channel.send("...")
 
-                if len(message_content) >= CHUNK_SIZE or char_limit_exceeded:
-                    message_content = [word]
-                    message_obj = await discord_channel.send("...")
+                        await message_obj.edit(content=message_content_str)
+                    except:
+                        message_obj = await discord_channel.send("...")
+                        await message_obj.edit(content=word)
+
+                    next_edit_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
 
         if message_content:
             await message_obj.edit(content="".join(message_content))

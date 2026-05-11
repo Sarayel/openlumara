@@ -176,7 +176,7 @@ class Discord(core.channel.Channel):
             for channel in guild.channels:
                 if isinstance(channel, discord.TextChannel) and (
                     channel.permissions_for(guild.me).view_channel and
-                    channel.permissions_for(guild.me).send_message
+                    channel.permissions_for(guild.me).send_messages
                 ):
                     for chunk in chunks:
                         await channel.send(chunk)

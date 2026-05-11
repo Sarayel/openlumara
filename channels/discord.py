@@ -39,14 +39,14 @@ class Client(discord.Client):
                 # edit message every few seconds or if token limit reached
                 if datetime.datetime.now() >= next_edit_time or len(message_content) >= CHUNK_SIZE:
                     try:
-                        if len(message_content) >= CHUNK_SIZE:
+                        await message_obj.edit(content=message_content_str)
+                        if len(message_content) >= CHUNK_SIZE-1:
                             message_content = []
                             message_obj = await discord_channel.send("...")
-
-                        await message_obj.edit(content=message_content_str)
                     except:
                         message_obj = await discord_channel.send("...")
                         await message_obj.edit(content=word)
+                        message_content = []
 
                     next_edit_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
 

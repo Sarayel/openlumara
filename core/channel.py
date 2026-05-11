@@ -579,29 +579,32 @@ class Channel:
             if chunk_size and token_counter >= chunk_size:
                 if currently_reasoning and show_reasoning:
                     yield text_to_token("> ")
-                token_counter = 0
+                    token_counter = 1 # what we just emitted counts as a token
 
             if token_type == "reasoning" and not currently_reasoning:
                 if show_reasoning:
-                    think_str = "\n## Thinking:\n> "
+                    # think_str = "\n## Thinking:\n> "
+                    think_str = "\n### thinking..\n> "
                     currently_reasoning = True
                 else:
                     think_str = "\n*thinking..*\n"
-                    currently_reasoning = True
+                currently_reasoning = True
 
-                char_counter += len(think_str)
+                # char_counter += len(think_str)
+                token_counter += 1
                 yield text_to_token(think_str)
 
             header_str = None
             if token_type == "tool":
                 header_str = "\n(processing results..)\n"
             elif token_type == "content" and show_reasoning and currently_reasoning:
-                header_str = "\n## Conclusion:\n"
+                header_str = "\n"
+                # header_str = "\n## Conclusion:\n"
 
             if header_str:
                 char_counter += len(header_str)
                 yield text_to_token(header_str)
-
+                token_counter += 1
 
             if token_type in ["content", "tool_calls", "tool"] and currently_reasoning:
                 # we can have multiple reasoning blocks
@@ -619,24 +622,25 @@ class Channel:
                     tool_delta_str = tool_delta_str.replace("\\n", "\n")
 
                     char_counter += len(tool_delta_str)
+                    token_counter += 1
                     yield text_to_token(tool_delta_str)
             elif not self.config.get("stream_tool_calls") and token_type == "tool_calls":
                 tool_calls = token.get("tool_calls")
                 for tool_call in tool_calls:
                     tool_str = "\n"+self.tc_manager.display_call(tool_call)
-
-                char_counter += len(tool_str)
-                yield text_to_token(tool_str)
+                    char_counter += len(tool_str)
+                    yield text_to_token(tool_str)
+                    token_counter += 1
 
             if token_type == "content":
                 yield text_to_token(content)
+                token_counter += 1
             if token_type == "reasoning" and show_reasoning:
+                token_counter += 1
                 yield text_to_token(content)
 
-            token_counter += 1
-
             if isinstance(content, str):
-                char_counter == len(content)
+                char_counter = len(content)
 
     async def on_push(self, message: dict):
         raise NotImplementedError

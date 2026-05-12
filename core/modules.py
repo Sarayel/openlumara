@@ -5,7 +5,7 @@ import inspect
 # modules that should have their prompts inserted even when tools are off
 nonagentic = ("characters", "time")
 
-def load(package, base_class = None, filter: list = None, skip_reload: bool = False):
+def load(package, base_class = None, filter: list = None, reload: bool = False):
     """
     loops through the specified package imported with `import whatever`, then checks inside those packages for any classes that derive from base_class, and return a tuple of those classes so we can use them as modules, channels etc
 
@@ -30,9 +30,10 @@ def load(package, base_class = None, filter: list = None, skip_reload: bool = Fa
             # Import the module relative to the package
             module = importlib.import_module(f"{package.__name__}.{modname}")
             
-            # Force reload to ensure we get the latest version of the module
-            # ONLY reload if skip_reload is False.
-            if not skip_reload:
+            # if the reload flag is true, force a reload of the module code so that new changes are applied
+            # NOTE: this is only intended to be used upon a total restart of openlumara.
+            # it can mess things up severely if modules/channels are still loaded
+            if reload:
                 importlib.reload(module)
 
             for attr_name in dir(module):

@@ -306,9 +306,9 @@ def _get_module_schema_cache():
         for section_key in sections_to_refresh:
             package, base_class = package_map[section_key]
             try:
-                # Skip reloading the package if it's 'channels' to avoid breaking the WebUI
-                skip_reload = (section_key == "channels")
-                classes = core.modules.load(package, base_class, skip_reload=skip_reload)
+                # skip reloading modules because we just want the data
+                classes = core.modules.load(package, base_class, reload=False)
+
                 for cls in classes:
                     name = core.modules.get_name(cls)
                     settings = getattr(cls, 'settings', {})

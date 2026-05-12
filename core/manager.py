@@ -74,7 +74,7 @@ class Manager:
 
         core.log("core", "Loading channels")
         import channels
-        for channel in core.modules.load(channels, core.channel.Channel, filter=enabled_channels):
+        for channel in core.modules.load(channels, core.channel.Channel, filter=enabled_channels, reload=True):
             # add an instance of the channel's class to self.channels
             channel_name = core.modules.get_name(channel)
             self.channels[channel_name] = channel(self)
@@ -97,7 +97,7 @@ class Manager:
 
             # load modules
             import modules
-            for module in core.modules.load(modules, core.module.Module, filter=enabled_modules):
+            for module in core.modules.load(modules, core.module.Module, filter=enabled_modules, reload=True):
                 try:
                     loaded_module = await self.add_module_class(module)
                     await loaded_module._start()
@@ -111,7 +111,7 @@ class Manager:
             # load user modules
             import user_modules
             core.log("core", "Loading user modules")
-            for module in core.modules.load(user_modules, core.module.Module, filter=enabled_user_modules):
+            for module in core.modules.load(user_modules, core.module.Module, filter=enabled_user_modules, reload=True):
                 try:
                     loaded_module = await self.add_module_class(module, is_user_module=True)
                     await loaded_module._start()

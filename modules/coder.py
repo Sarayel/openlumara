@@ -1167,33 +1167,28 @@ class Coder(modules.sandboxed_files.SandboxedFiles):
             return self.result("error: project does not exist", success=False)
 
         def _build_tree(path, current_depth):
-            if not os.path.isdir(path):
-                return {"files": [], "folders": {}}
-
-            files = []
-            folders = {}
+            tree = {}
             files_counter = 0
             try:
                 for entry in os.scandir(path):
                     if entry.is_file():
-                        if files_counter > max_files_per_folder:
-                            continue
-
-                        files.append(entry.name)
-                        files_counter += 1
+                        if files_counter < max_files_per_folder:
+                            tree[entry.name] = None
+                            files_counter += 1
                     elif entry.is_dir():
                         if entry.name in self.config.get("limits", "folder_blacklist", default=[]):
                             continue
                         if entry.name.startswith('.'):
                             continue
+                        
+                        folder_key = f"{entry.name}/"
                         if current_depth < depth_limit:
-                            folders[entry.name] = _build_tree(entry.path, current_depth + 1)
+                            tree[folder_key] = _build_tree(entry.path, current_depth + 1)
                         else:
-                            folders[entry.name] = {"files": [], "folders": {}}
+                            tree[folder_key] = {}
             except Exception:
                 pass
-
-            return {"files": files, "folders": folders}
+            return tree
 
         try:
             tree = _build_tree(project_path, 0)

@@ -150,7 +150,7 @@ class ToolcallManager:
                 # build a fancy toolcall display string
                 tool_call_str = self.display_call(tool_call_dict)
 
-                # core.log("toolcall", tool_call_str)
+                core.log("toolcall", tool_call_str)
 
                 try:
                     # do the function call and get it's result
@@ -192,8 +192,8 @@ class ToolcallManager:
                 await self.channel.context.chat.add(tool_response)
 
                 # push it if needed
-                if push:
-                    await self.channel.push(tool_response)
+                # if push:
+                #     await self.channel.push(tool_response)
             else:
                 core.log(
                     "toolcall",

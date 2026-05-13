@@ -291,9 +291,14 @@ class Manager:
                 # skip most prompts if tools are turned off
                 continue
 
-            if active_character and module_name != "characters" and "characters" in self.modules.keys():
+            char_modules_exempt = ["characters"]
+            if self.modules.get("writing_style") and self.modules["characters"].config.get("use_writing_style"):
+                char_modules_exempt.append("writing_style")
+
+            if active_character and module_name not in char_modules_exempt and "characters" in self.modules.keys():
                 # if a character is currently active, display ONLY the character system prompt
                 char_disable_agent_prompts = self.modules["characters"].config.get("disable_agent_prompts_when_character_active")
+
                 if char_disable_agent_prompts:
                     continue
 

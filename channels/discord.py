@@ -13,7 +13,7 @@ class Client(discord.Client):
 
     async def _stream_to_discord(self, token_stream, discord_channel):
         """streams a message to discord in steps"""
-        edit_interval = self.ai_channel.config.get("discord_edit_interval", 2)
+        edit_interval = self.ai_channel.config.get("edit_interval", 1)
         message_obj = await discord_channel.send("processing your request...")
         edit_lock = asyncio.Lock()
 
@@ -88,8 +88,9 @@ class Client(discord.Client):
 
     async def on_ready(self):
         core.log("discord", "logged in.")
-        if self.ai_channel.config.get("announce_startup"):
-            await self.ai_channel.announce("i'm back up!", type="status")
+        startup_message = self.ai_channel.config.get("startup_message")
+        if startup_message:
+            await self.ai_channel.push(startup_message)
 
     async def on_message(self, message):
         if message.author == self.user:
@@ -97,7 +98,7 @@ class Client(discord.Client):
 
         self._channel = message.channel
 
-        if message.channel.id != self.ai_channel.config.get("target_channel_id"):
+        if message.channel.id != int(self.ai_channel.config.get("target_channel_id")):
             return
 
         if message.content:
@@ -180,19 +181,57 @@ class Client(discord.Client):
                         return await message.channel.send(f"error while sending request to AI: {err_msg}")
 
 class Discord(core.channel.Channel):
+    """Communicate with your AI over Discord"""
+
     settings =  {
-        "token": "TOKEN_HERE",
-        "authorised_user_id": "USER_ID_HERE",
-        "target_channel_id": "CHANNEL_ID_HERE",
-        "require_mentions": False,
-        "use_message_streaming": False,
-        "show_reasoning": False,
-        "stream_tool_calls": False,
-        "use_replies": True,
-        "enable_group_chat": False,
-        "announce_startup": False,
-        "announce_shutdown": False,
-        "discord_edit_interval": 2
+        "token": {
+            "description": "Your discord token. Get it in the [Discord Developer Portal](https://discord.com/developers/applications)",
+            "default": None
+        },
+        "authorised_user_id": {
+            "description": "Your personal user ID. Get it by enabling *Developer Mode* in Discord (open Settings, then go to Developer, then toggle on Developer Mode), then right clicking your name and clicking/tapping *Copy ID*",
+            "default": None
+        },
+        "target_channel_id": {
+            "description": "The channel to target for communication with your discord bot. Get this by right clicking your channel and clicking/tapping *Copy ID*",
+            "default": None
+        },
+        "require_mentions": {
+            "description": "Whether to require people to mention the bot or reply to one of its messages in order to trigger a response",
+            "default": True
+        },
+        "use_message_streaming": {
+            "description": "Whether to stream messages by periodically editing them. Use this together with *show reasoning* and *stream tool calls* for an experience very similar to the WebUI!",
+            "default": False
+        },
+        "edit_interval": {
+            "description": "The rate (in seconds) at which your bot's messages will be edited in streaming mode. Recommend setting this to 1 or above to avoid being rate limited!",
+            "default": 1
+        },
+        "show_reasoning": {
+            "description": "Whether to show the model's internal reasoning process within sent messages. Works in both streaming mode and non-streaming mode",
+            "default": False
+        },
+        "stream_tool_calls": {
+            "description": "Whether to stream tool call arguments as they are written by the AI. Extremely useful when using toolcalls with long content, such as when using the Coder to write code",
+            "default": False
+        },
+        "use_replies": {
+            "description": "Whether the bot should reply to your messages using discord's reply feature",
+            "default": False
+        },
+        "enable_group_chat": {
+            "description": "Will make the bot aware of who is talking to it by injecting the name of the person into messages sent to the AI",
+            "default": True
+        },
+        "startup_message": {
+            "description": "The message your bot will send when it's started up. Leave this blank to disable",
+            "default": None
+        },
+        "shutdown_message": {
+            "description": "The message your bot will send when it shuts down. Leave this blank to disable",
+            "default": None
+        }
     }
 
     async def on_push(self, message: dict):
@@ -210,7 +249,7 @@ class Discord(core.channel.Channel):
         for guild in self._client.guilds:
             for channel in guild.channels:
                 if isinstance(channel, discord.TextChannel) and (
-                    channel.id == self.config.get("target_channel_id") and (
+                    channel.id == int(self.config.get("target_channel_id")) and (
                         channel.permissions_for(guild.me).view_channel and
                         channel.permissions_for(guild.me).send_messages
                     )
@@ -223,7 +262,7 @@ class Discord(core.channel.Channel):
         token = core.config.config.get("channels").get("settings").get("discord").get("token")
 
         if not token:
-            core.log("error", "discord token not set! set it in config.yaml as discord_token")
+            core.log("error", "Discord token not set! Set it up in the webui or by editing the config")
             return False
 
         intents = discord.Intents.default()
@@ -244,6 +283,8 @@ class Discord(core.channel.Channel):
             core.log("error", f"error connecting to discord: {e}")
 
     async def on_shutdown(self):
-        if self.config.get("announce_shutdown"):
-            await self.announce("i'm shutting down!")
+        shutdown_message = self.config.get("shutdown_message")
+        if shutdown_message:
+            await self.push(shutdown_message)
+
         await self._client.close()

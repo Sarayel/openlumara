@@ -5,8 +5,8 @@ class Docs(core.module.Module):
 
     settings = {
         "documentation_path": {
-            "description": "The folder to grab docs from. It uses folders with markdown files. The default `docs` folder is the openlumara documentation!",
-            "default": "docs"
+            "description": "The folder to grab docs from. It uses folders with markdown files. Leave blank to set it to the built-in openlumara documentation!",
+            "default": None
         },
         "insert_system_prompt": {
             "description": "Will make your AI aware of all documentation subjects available to it. Stays small in system prompt because it only lists the top-level folders, which are the topics the documentation is about, not the individual pages.",
@@ -16,7 +16,12 @@ class Docs(core.module.Module):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.data = core.storage.StorageDict("docs", "markdown")
+
+        docs_path = self.config.get("documentation_path") or core.get_path("docs")
+        self.data = core.storage.StorageDict(".", "markdown", path=docs_path)
+
+        # force load so it works in temporary mode
+        self.data.load()
 
     async def on_system_prompt(self):
         if not self.config.get("insert_system_prompt"):
@@ -34,22 +39,42 @@ class Docs(core.module.Module):
                 break
         return found
 
-    async def list_documentation(self, topic: str):
-        """Grabs documentation about a specific topic. Use ONLY on topic listed within the `documentation` section of your system prompt"""
+    async def read(self, topic: str, subject: str = None):
+        """Reads documentation about a specific subject within a specific topic. 
+        If the subject is not provided or is a folder, it returns a list of available subjects.
+        If the subject is a file, it returns the content."""
 
         if not self._find_topic(topic):
-            return self.result("Documentation about that topic was not found. Please rely on your own knowledge or try a web search.", success=False)
+            return self.result("Documentation about that topic was not found. Please rely on your own knowledge or try a web search if available.", success=False)
 
-        return self.result(list(self.data[topic.lower().strip()].keys()))
+        topic_dict = self.data[topic.lower().strip()]
+        
+        # If no subject is provided, list everything in the topic
+        if not subject or not subject.strip():
+            subjects = [k for k in topic_dict.keys()]
+            return self.result({
+                "subjects": subjects,
+                "instructions": "The subjects listed above are paths within this topic. You can call read_documentation again with a specific path as the subject to read the content."
+            })
 
-    async def read_documentation(self, topic: str, subject: str):
-        """Reads documentation about a specific subject within a specific topic. Use list_documentation before calling this."""
+        # Traverse the path
+        parts = subject.strip("/").split("/")
+        current = topic_dict
+        
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return self.result(f"Subject '{subject}' not found within topic '{topic}'.", success=False)
 
-        if not self._find_topic(topic):
-            return self.result("Documentation about that topic was not found. Please rely on your own knowledge or try a web search.", success=False)
-
-
-        if subject not in self.data[topic]:
-            return self.result("That subject does not exist within that topic. Please use list_documentation first to see the available subjects within this documentation.", success=False)
-
-        return self.data.get(topic).get(subject)
+        # If we ended up on a dictionary, it's a folder
+        if isinstance(current, dict):
+            prefix = subject.strip("/")
+            subjects = [f"{prefix}/{k}" if prefix else k for k in current.keys()]
+            return self.result({
+                "subjects": subjects,
+                "instructions": "The subjects listed above are paths within this folder. You can call read_documentation again with a specific path as the subject to read the content."
+            })
+        
+        # It's a file, return content
+        return current

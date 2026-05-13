@@ -31,3 +31,13 @@ class Modules(core.module.Module):
             return self.result("Module has been toggled. Remind user to use `/restart` to apply changes")
         else:
             return self.result("That module does not exist!", success=false)
+
+    async def get_settings_docs(self, module_name: str):
+        """Returns the settings structure for any given module. Use this if user wants to know how to set up or use a specific module."""
+
+        structure = core.config.get_module_structure()
+
+        if module_name not in structure:
+            return self.result("That module does not exist", success=False)
+
+        return structure.get(module_name)

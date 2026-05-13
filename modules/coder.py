@@ -62,66 +62,6 @@ except Exception as e:
 class Coder(modules.sandboxed_files.SandboxedFiles):
     """Allows your AI to write, edit and test code for you."""
 
-    settings = {
-        "sandbox_folder": {
-            "default": "~/coder",
-            "description": "What folder the coder tools should have access to"
-        },
-        "reading_mode": {
-            "default": "symbols",
-            "type": "select",
-            "options": {
-                "none": "Prevent your AI from reading any files... if you need that for some reason",
-                "symbols": "The AI will target specific 'symbols' (functions/class methods) to read their code. Supports treesitter for greatly improved symbol targeting and syntax error detection. Treesitter support must be installed for it to work (requirements_coder.txt)",
-                "files": "The AI will read entire files, with a line and filesize limit",
-                "both": "The AI will be able to read using symbol tools and full file reading tools"
-            }
-        },
-        "writing_mode": {
-            "default": "symbols",
-            "type": "select",
-            "options": {
-                "read-only": "The AI will only be able to read your files, not write to them.",
-                "symbols": "The AI will edit code by targeting specific 'symbols' (functions/class methods)",
-                "full edits": "The AI will edit code by performing direct file edits and search/replace",
-                "both": "The AI will be able to edit using symbol tools and full file editing tools"
-            }
-        },
-        "coding_style": {
-            "default": "Write clean, well-commented code. Do not include your reasoning inside final code.",
-            "description": "Use this to specify style guidelines for your AI to use while coding.",
-            "type": "long_text"
-        },
-        "add_project_list_to_system_prompt": {
-            "default": True,
-            "description": "Make your AI aware of all the folders in your sandbox folder, so you can simply say 'in my cute_website project, edit the buttons to be cuter'"
-        },
-        "use_working_directory": {
-            "default": False,
-            "description": "Automatically grant access to the Current Working Directory (the folder you started openlumara from)"
-        },
-        "allow_code_exection": False,
-        "limits": {
-            "folder_blacklist": {
-                "description": "Skip these folders when listing projects recursively. Helps not flood your context with hundreds of files, such as with python's venv and __pycache__",
-                "default": ["venv", "__pycache__"]
-            },
-            "max_file_size": {
-                "description": "Max file size (in MB) the coder should be able to read in one go",
-                "default": 10
-            },
-            "max_read_lines": {
-                "description": "Max amount of lines to read from any given file. Use this to prevent your context window from getting stuffed to the brim really fast!",
-                "default": 1000
-            },
-            "max_grep_results": 50,
-            "backup_retention_count": {
-                "description": "How many backups of each file to keep",
-                "default": 10
-            }
-        }
-    }
-
     # Language-specific formatting tools mapping
     FORMATTERS = {
         'python': ['black', 'autopep8', 'yapf'],
@@ -275,9 +215,74 @@ class Coder(modules.sandboxed_files.SandboxedFiles):
         }
     }
 
+    settings = {
+        "sandbox_folder": {
+            "default": "~/coder",
+            "description": "What folder the coder tools should have access to"
+        },
+        "reading_mode": {
+            "default": "symbols",
+            "type": "select",
+            "options": {
+                "none": "Prevent your AI from reading any files... if you need that for some reason",
+                "symbols": "The AI will target specific 'symbols' (functions/class methods) to read their code. Supports treesitter for greatly improved symbol targeting and syntax error detection. Treesitter support must be installed for it to work (requirements_coder.txt)",
+                "files": "The AI will read entire files, with a line and filesize limit",
+                "both": "The AI will be able to read using symbol tools and full file reading tools"
+            }
+        },
+        "writing_mode": {
+            "default": "symbols",
+            "type": "select",
+            "options": {
+                "read-only": "The AI will only be able to read your files, not write to them.",
+                "symbols": "The AI will edit code by targeting specific 'symbols' (functions/class methods)",
+                "full edits": "The AI will edit code by performing direct file edits and search/replace",
+                "both": "The AI will be able to edit using symbol tools and full file editing tools"
+            }
+        },
+        "allow_total_overwrites": {
+            "description": "Whether to allow the AI to fully overwrite files when writing mode is set to *full edits* or *both*. This is dangerous with some AI models because they can easily mess up your entire file, but is also sometimes needed for things like refactors.",
+            "default": False
+        },
+        "coding_style": {
+            "default": "Write clean, well-commented code. Do not include your reasoning inside final code.",
+            "description": "Use this to specify style guidelines for your AI to use while coding.",
+            "type": "long_text"
+        },
+        "add_project_list_to_system_prompt": {
+            "default": True,
+            "description": "Make your AI aware of all the folders in your sandbox folder, so you can simply say 'in my cute_website project, edit the buttons to be cuter'"
+        },
+        "limits": {
+            "folder_blacklist": {
+                "description": "Skip these folders when listing projects recursively. Helps not flood your context with hundreds of files, such as with python's `venv` and `__pycache__`",
+                "default": ["venv", "__pycache__"]
+            },
+            "max_file_size": {
+                "description": "Max file size (in MB) the coder should be able to read in one go",
+                "default": 10
+            },
+            "max_read_lines": {
+                "description": "Max amount of lines to read from any given file. Use this to prevent your context window from getting stuffed to the brim really fast!",
+                "default": 1000
+            },
+            "max_grep_results": 50,
+            "backup_retention_count": {
+                "description": "How many backups of each file to keep",
+                "default": 10
+            }
+        },
+        "allow_code_exection": {
+            "description": "Whether to allow the AI to execute the code it has written. **EXTREMELY DANGEROUS**! Recommend using the `sandboxed shell` module instead and pointing it at your coder sandbox folder.",
+            "unsafe": True,
+            "default": False
+        }
+    }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.path = self.sandbox_path
+
         # Parser cache for performance - reuse Parser instances
         self._parser_cache = {}
         self.enabled_tools = []
@@ -319,7 +324,6 @@ class Coder(modules.sandboxed_files.SandboxedFiles):
         file_writing_tools = [
             "create_project",
             "create_file",
-            "overwrite_file",
             "append_to_file",
             "edit",
             "search_replace",
@@ -349,6 +353,9 @@ class Coder(modules.sandboxed_files.SandboxedFiles):
             case "both":
                 self.enabled_tools.extend(symbol_writing_tools)
                 self.enabled_tools.extend(file_writing_tools)
+
+        if self.config.get("writing_mode") in ("full edits", "both") and self.config.get("allow_total_overwrites"):
+            self.enabled_tools.append("overwrite_file")
 
         if self.config.get("allow_code_exection"):
             self.enabled_tools.append("execute")

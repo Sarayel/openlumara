@@ -13,9 +13,12 @@ class Memory(core.module.Module):
     settings = {
         "insert_system_prompt": {
             "default": True,
-            "description": "Put extra instructions in the system prompt to help the AI autonomously use its memory system to remember things without you having to explicitely ask for it"
+            "description": "Whether to put extra instructions in the system prompt to help the AI autonomously use its memory system, so that it remembers things without you having to explicitely ask it to."
         },
-        "put_pinned_memories_in_system_prompt": True,
+        "put_pinned_memories_in_system_prompt": {
+            "description": "Whether to put the AI's pinned memories in the system prompt. Pinned memories are memories that you or the AI has decided it needs to remember at all times. You can pin a memory by asking your AI to pin it, or sometimes it'll decide to pin by itself if it has decided a memory is important enough. You can always ask it to unpin a memory you don't want pinned!",
+            "default": True
+        },
         "max_pinned_memories": 20
     }
 

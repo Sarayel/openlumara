@@ -170,8 +170,9 @@ class Telegram(core.channel.Channel):
                         response = await self.send({"role": "user", "content": user_msg})
                         if response:
                             content = response.get("content")
-                            # send message to telegram
-                            await context.bot.send_message(chat_id, content)
+                            if content:
+                                # send message to telegram
+                                await self._send_chunked_message(context.bot, chat_id, content)
                 except Exception as e:
                     core.log("telegram", f"Error in queue worker processing: {e}")
                 finally:
@@ -300,13 +301,51 @@ class Telegram(core.channel.Channel):
     async def _send_telegram_message(self, text: str):
         if not self.authorized_chat_id or not self.app:
             return
-        try:
-            await self.app.bot.send_message(self.authorized_chat_id, text, parse_mode="Markdown")
-        except Exception:
+        await self._send_chunked_message(self.app.bot, self.authorized_chat_id, text)
+
+    async def _send_chunked_message(self, bot, chat_id, text):
+        """Sends a message to Telegram, splitting it into chunks if it's too long."""
+        if not text:
+            return
+
+        max_length = 4000
+        
+        if len(text) <= max_length:
             try:
-                await self.app.bot.send_message(self.authorized_chat_id, text)
-            except Exception as e:
-                core.log("telegram", f"Failed to send message: {e}")
+                await bot.send_message(chat_id, text, parse_mode="Markdown")
+            except Exception:
+                try:
+                    await bot.send_message(chat_id, text)
+                except Exception as e:
+                    core.log("telegram", f"Failed to send message: {e}")
+            return
+
+        chunks = []
+        while text:
+            if len(text) <= max_length:
+                chunks.append(text)
+                break
+            
+            # Try to split at a newline or space within the limit
+            split_idx = text.rfind('\n', 0, max_length)
+            if split_idx == -1:
+                split_idx = text.rfind(' ', 0, max_length)
+            if split_idx == -1:
+                split_idx = max_length
+            
+            chunks.append(text[:split_idx].strip())
+            text = text[split_idx:].strip()
+
+        for chunk in chunks:
+            if not chunk:
+                continue
+            try:
+                await bot.send_message(chat_id, chunk, parse_mode="Markdown")
+            except Exception:
+                try:
+                    await bot.send_message(chat_id, chunk)
+                except Exception as e:
+                    core.log("telegram", f"Failed to send chunk: {e}")
 
     async def on_push(self, message: dict):
         content = message.get("content")

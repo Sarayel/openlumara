@@ -139,7 +139,6 @@ class Channel:
     async def _start_push_queue(self):
         if not hasattr(self, "on_push"):
             return
-        core.log(self.name, "starting message push queue consumer")
         self._queue_task = asyncio.create_task(self._push_consumer())
 
     async def _push_consumer(self):

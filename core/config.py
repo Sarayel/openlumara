@@ -61,6 +61,7 @@ DEFAULT_MODULES = (
     "models",
     "channel",
     "modules",
+    "module_maker",
     "chats",
     "context",
     "memory",

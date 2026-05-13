@@ -158,7 +158,7 @@ def _get_config_value(path: list):
                                 opts = s_schema["options"]
                                 opt_list = [f"{k}: {v}" for k, v in opts.items()]
                                 if opt_list:
-                                    desc += " Options: " + ", ".join(opt_list)
+                                    desc += "\nYou can set this to one of:\n- " + "\n- ".join(opt_list)
                         
                         if desc:
                             lines.append(f"{s_name}: {desc}")
@@ -166,7 +166,7 @@ def _get_config_value(path: list):
                             lines.append(f"{s_name}")
                     
                     if lines:
-                        return "\n".join(lines)
+                        return "\n\n".join(lines)
                     else:
                         return f"No settings found for {name}"
 

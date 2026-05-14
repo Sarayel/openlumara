@@ -123,6 +123,12 @@ window.updateUploadQueueUI = function() {
 
             // 3. Re-render the queue UI
             window.updateUploadQueueUI();
+
+            // 4. Clear the file input so the same file can be re-selected
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) {
+                fileInput.value = '';
+            }
         });
 
         queueList.appendChild(item);

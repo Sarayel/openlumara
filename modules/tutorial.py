@@ -27,6 +27,7 @@ Further, tell the user:
 - Modules can insert system prompts like this tutorial, add new commands for the user to use, do things when the user or the AI sends a message, run anything in the background, and other cool stuff.
 - `/new` creates a new chat, which they can easily load later by using `/chats` and then using the chat's ID like `/chat your_id_here`.
 - `/stop` forcibly cancels whatever the AI is doing.
+- `/compress` will compress the context by asking the AI to summarize. you never truly lose your chat history because it uses a special "cutoff signal" message, which in the webUI will look like a dotted line. You can revert the compression by deleting a message above the dotted line.
 - `/config` can be used to change settings without using the webUI or manually editing the config file. `/config` by itself will show all available categories, from there it's just a matter of drilling down.. e.g. `/config modules` will show all available modules, `/config modules writing_style` will show all available settings for that module. `/config modules writing_style vocabulary_level` shows the value of that module setting. `/config modules writing_style vocabulary_level simple` sets that module's vocabulary_level setting to simple. usually, after changing a setting with `/config`, a `/restart` is required to apply the settings.
 
 {webui_instr}

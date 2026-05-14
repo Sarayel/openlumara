@@ -616,6 +616,89 @@ async def upload_file(request: Request):
 # Chat Management Routes
 # =============================================================================
 
+@app.post("/api/search")
+async def search_chats(request: Request):
+    if not channel_instance:
+        return JSONResponse({'error': 'Channel not available'}, status_code=500)
+
+    data = await request.json()
+    query = data.get("query", "").lower().strip()
+    search_in_content = data.get("search_in_content", True)
+    category = data.get("category") # Optional category filter
+
+    if not query:
+        return {"results": []}
+
+    all_chats = await channel_instance.context.chat.get_all()
+    
+    # 1. Filter by category if provided
+    if category:
+        if category == 'general':
+            all_chats = [c for c in all_chats if not c.get('category') or c.get('category') == 'general']
+        else:
+            all_chats = [c for c in all_chats if c.get('category') == category]
+
+    results = []
+
+    for conv in all_chats:
+        title = conv.get('title', '')
+        title_lower = title.lower()
+        title_match = query in title_lower
+        content_match = False
+        snippet = None
+
+        if search_in_content and conv.get('messages'):
+            for msg in conv['messages']:
+                content_parts = []
+                raw_content = msg.get('content', '')
+                if isinstance(raw_content, str):
+                    content_parts.append(raw_content)
+                elif isinstance(raw_content, list):
+                    for part in raw_content:
+                        if isinstance(part, dict) and part.get('type') == 'text':
+                            content_parts.append(part.get('text', ''))
+                
+                content = "".join(content_parts)
+                content_lower = content.lower()
+
+                if query in content_lower:
+                    content_match = True
+                    start_idx = content_lower.find(query)
+                    end_idx = start_idx + len(query)
+                    
+                    context_padding = 40
+                    snippet_start = max(0, start_idx - context_padding)
+                    snippet_end = min(len(content), end_idx + context_padding)
+                    snippet = content[snippet_start:snippet_end]
+                    
+                    if snippet_start > 0:
+                        snippet = "..." + snippet
+                    if snippet_end < len(content):
+                        snippet = snippet + "..."
+                    break
+
+        if title_match or content_match:
+            results.append({
+                'chat': {
+                    'id': conv.get('id'),
+                    'title': title,
+                    'updated': conv.get('updated'),
+                    'created': conv.get('created'),
+                    'tags': conv.get('tags', []),
+                    'category': conv.get('category', 'general'),
+                    'custom_data': conv.get('custom_data', {})
+                },
+                'title_match': title_match,
+                'snippet': snippet
+            })
+
+    results.sort(key=lambda x: (
+        not x['title_match'],
+        -datetime.fromisoformat(x['chat']['updated']).timestamp() if x['chat']['updated'] else 0
+    ))
+    return {"results": results}
+
+
 @app.get("/chats")
 async def list_chats():
     if not channel_instance:

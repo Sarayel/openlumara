@@ -477,6 +477,17 @@
     align-items: center;
 }
 
+.chat-item-snippet {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.2;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .chat-item-actions {
     display: flex;
     gap: 4px;

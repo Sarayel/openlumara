@@ -2,10 +2,13 @@ import core
 import ulid
 import datetime
 import os
-import tiktoken
 
 # wtf tiktoken?! apparentely you don't work offline... might need to switch off it ASAP
-os.environ["TIKTOKEN_CACHE_DIR"] = core.get_path(".tiktoken_cache")
+cache_dir = core.get_path(".tiktoken_cache")
+os.makedirs(cache_dir, exist_ok=True)
+os.environ["TIKTOKEN_CACHE_DIR"] = cache_dir
+
+import tiktoken
 
 class Chat:
     DEFAULT_DATA = {
@@ -25,6 +28,20 @@ class Chat:
         self.using_api_token_data = False # gets instantly set to True upon first receive of token usage data
         self.token_encoding = None
 
+        # initialize token encoding
+        model_name = None
+        if hasattr(self.channel, 'manager') and hasattr(self.channel.manager, 'API'):
+            model_name = self.channel.manager.API._model
+
+        try:
+            self.token_encoding = tiktoken.encoding_for_model(model_name)
+        except KeyError:
+            self.token_encoding = tiktoken.get_encoding("cl100k_base")
+        except:
+            # If tiktoken fails to load (e.g. no internet and no cache), we set to None
+            # count_tokens will handle the fallback
+            pass
+
         for index in range(len(self.data) - 1, -1, -1):
             chat = self.data[index]
             messages = chat.get("messages", [])
@@ -40,20 +57,6 @@ class Chat:
                 for key, default_value in self.DEFAULT_DATA.items():
                     if key not in chat.keys():
                         self.data[index][key] = default_value
-
-            # initialize token encoding
-            model_name = None
-            if hasattr(self.channel, 'manager') and hasattr(self.channel.manager, 'API'):
-                model_name = self.channel.manager.API._model
-
-            try:
-                self.token_encoding = tiktoken.encoding_for_model(model_name)
-            except KeyError:
-                self.token_encoding = tiktoken.get_encoding("cl100k_base")
-            except:
-                # If tiktoken fails to load (e.g. no internet and no cache), we set to None
-                # count_tokens will handle the fallback
-                pass
 
         # chat autoresume
         if os.path.exists(self.current_save_path) and core.config.get("core", {}).get("auto_resume_chats"):

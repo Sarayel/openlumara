@@ -41,7 +41,7 @@ class Models(core.module.Module):
     async def models(self, args: list):
         """Lists available models."""
         await self._load_models()
-        return "\n".join(self.models)
+        return "\n".join(self.models)+"\n\nUse `/model <name>` to switch to your model of choice"
 
     async def switch(self, name: str):
         """Switches you to a different AI model"""

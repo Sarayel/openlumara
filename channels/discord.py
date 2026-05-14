@@ -51,6 +51,7 @@ class Client(discord.Client):
                                 state.pending_content = ""
                                 try:
                                     await state.message_obj.edit(content=state.full_content)
+                                    core.log(self.ai_channel.name, state.full_content)
                                 except:
                                     pass
                             
@@ -76,6 +77,7 @@ class Client(discord.Client):
                     state.pending_content = ""
                 
                 if state.full_content:
+                    core.log(self.ai_channel.name, state.full_content)
                     try:
                         await state.message_obj.edit(content=state.full_content)
                     except Exception:
@@ -83,8 +85,6 @@ class Client(discord.Client):
                             await discord_channel.send(state.full_content)
                         except:
                             pass
-            
-            return state.full_content if state.full_content else "..come again?"
 
     async def on_ready(self):
         core.log("discord", "logged in.")
@@ -163,7 +163,7 @@ class Client(discord.Client):
                                 self.ai_channel.send_stream({"role": "user", "content": content}),
                                 chunk_size=MAX_CHARS
                             )
-                            response_content = await self._stream_to_discord(response_obj, message.channel)
+                            await self._stream_to_discord(response_obj, message.channel)
                         else:
                             response_obj = await self.ai_channel.send({"role": "user", "content": content})
 

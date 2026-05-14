@@ -33,11 +33,14 @@ class APIClient():
         """
         Maps technical error types to polite, actionable messages for end-users.
         """
+
+        model_msg = f"Model {self._model} not found" if self._model else "You have no model set"
         messages = {
             "auth_failed": "Your API key is invalid or expired. Please check your configuration settings.",
             "connection_lost": "We lost connection to the AI server. Please check your internet connection and try again.",
             "rate_limit": "You are sending requests too quickly. Please wait a moment before trying again.",
             "api_error": "The AI service is currently experiencing issues. Please try again in a few minutes.",
+            "model_not_found": f"{model_msg}. Please select a model by using `/models` or the Settings in the WebUI",
             "cancelled": "The request was cancelled.",
             "blank_request": "The request was empty. Please try typing your message again.",
             "processing_failed": "We had trouble reading the response from the AI. Please try sending your message again.",
@@ -244,6 +247,21 @@ class APIClient():
             self.connected = False
             self._connection_error = self._get_user_friendly_message("connection_lost", e)
             return {"error": "connection_lost", "message": self._connection_error}
+
+        except openai.NotFoundError as e:
+            core.log_error("Model not found", e)
+            return {"error": "model_not_found", "message": self._get_user_friendly_message("model_not_found", e)}
+
+        except openai.BadRequestError as e:
+            # Check if the error message specifically mentions the model is not found
+            error_str = str(e).lower()
+            if "model" in error_str and "not found" in error_str:
+                core.log_error("Model not found (400)", e)
+                return {"error": "model_not_found", "message": self._get_user_friendly_message("model_not_found", e)}
+            else:
+                # It's a different kind of 400 error (e.g., invalid parameters)
+                core.log_error("Bad request (400)", e)
+                return {"error": "api_error", "message": self._get_user_friendly_message("api_error", e)}
 
         except openai.RateLimitError as e:
             core.log_error("Rate limit exceeded", e)

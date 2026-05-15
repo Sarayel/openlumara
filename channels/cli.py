@@ -69,6 +69,8 @@ class ToolCallRenderer:
             self.printed_values = {}
 
 class Cli(core.channel.Channel):
+    """Talk to your AI from the terminal! Auto-disables itself when ran as a background server."""
+
     running = True
 
     def _setup_style(self):

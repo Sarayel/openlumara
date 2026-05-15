@@ -74,8 +74,7 @@ logging.getLogger("nio").setLevel(logging.WARNING)
 
 class Matrix(core.channel.Channel):
     """
-    A Matrix channel with E2EE support using matrix-nio.
-    Merged with robust session handling and decryption retries.
+    Matrix channel with encryption support. Experimental, a bit unstable.
     """
 
     running = False

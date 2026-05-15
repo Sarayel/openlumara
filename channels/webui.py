@@ -1388,6 +1388,8 @@ async def icon():
 # =============================================================================
 
 class Webui(core.channel.Channel):
+    """Polished web interface that can be used on any device, granting you a fully private way to talk to your AI."""
+
     settings = {
         "network_mode": {
             "type": "select",

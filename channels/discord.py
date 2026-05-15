@@ -181,7 +181,7 @@ class Client(discord.Client):
                         return await message.channel.send(f"error while sending request to AI: {err_msg}")
 
 class Discord(core.channel.Channel):
-    """Communicate with your AI over Discord"""
+    """Talk to your AI over Discord"""
 
     settings =  {
         "token": {

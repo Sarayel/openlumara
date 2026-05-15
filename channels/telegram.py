@@ -9,13 +9,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.error import BadRequest
 
 class Telegram(core.channel.Channel):
-    """
-    A Telegram channel with live streaming, command pass-through,
-    and pretty-printed tool call visualization.
-
-    Commands are processed immediately to allow /stop to interrupt streams.
-    Normal messages are queued to ensure sequential processing.
-    """
+    """Talk to your AI over Telegram"""
     running = False
 
     settings =  {

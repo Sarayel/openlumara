@@ -2,6 +2,7 @@ import core
 import openai
 import asyncio
 import json
+import time
 import inspect
 
 class APIClient():
@@ -204,7 +205,8 @@ class APIClient():
             "extra_body": {
                 "chat_template_kwargs": {
                     "enable_thinking": core.config.get("model", "enable_thinking", default=use_thinking)
-                }
+                },
+                "return_progress": True
             }
         }
 
@@ -403,6 +405,7 @@ class APIClient():
         total_prompt_tokens = 0
         total_completion_tokens = 0
         has_usage_data = False
+        last_token_time = 0
 
         if not response:
             return
@@ -416,8 +419,19 @@ class APIClient():
                     return
 
                 # uncomment if trying to see token stream chunks
-                # if core.debug:
-                #     print(chunk)
+                # print(chunk)
+
+                if hasattr(chunk, 'prompt_progress') and chunk.prompt_progress is not None:
+                    yield {
+                        "type": "prompt_progress",
+                        "content": chunk.prompt_progress
+                    }
+
+                # Calculate time delta for real-time stats
+                current_time = time.time()
+                delta_ms = (current_time - last_token_time) * 1000
+                last_token_time = current_time
+
 
                 if chunk.choices:
                     streamed_token = chunk.choices[0].delta
@@ -434,6 +448,20 @@ class APIClient():
                     if reason_part:
                         reasoning_tokens.append(reason_part)
                         yield {"type": "reasoning", "content": reason_part}
+
+                    if streamed_token.content or reason_part:
+                        # Send timing data: Use native if available, otherwise calculate
+                        native_timings = getattr(chunk, 'timings', None)
+                        if native_timings:
+                            yield {"type": "timings", "content": native_timings}
+
+                        else:
+                            # Fallback: Calculate tokens/s based on time between chunks
+                            if delta_ms > 1: # Only yield if significant time passed
+                                yield {"type": "timings", "content": {
+                                    "predicted_ms": delta_ms,
+                                    "predicted_n": 1
+                                }}
 
                     # extract tool calls, if any
                     if streamed_token.tool_calls and use_tools:

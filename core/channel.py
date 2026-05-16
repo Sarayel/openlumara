@@ -378,6 +378,9 @@ class Channel:
 
         # and stream the response to the caller of this method
         async for token in self.manager.API.send_stream(context):
+            # always yield the token to the caller
+            yield token
+
             token_type = token.get("type")
 
             # handle any errors
@@ -390,15 +393,12 @@ class Channel:
             if token_type == "content":
                 # this is a normal piece of streamed text
                 final_content.append(token.get("content"))
-                yield token
             elif token_type == "reasoning":
                 final_reasoning.append(token.get("content"))
-                yield token
             elif token_type == "tool_call_delta":
                 # yay toolcall arg streaming!
-                yield token
+                pass
             elif token_type == "tool_calls":
-                yield token
                 tool_calls_occurred = True
 
                 toolcall_request = await self.tc_manager._build_recursive_request(token, final_content, final_reasoning)
@@ -409,7 +409,7 @@ class Channel:
                 # tc_manager.process() will loop until the AI no longer deems tool calls necessary
             elif token_type == "tool":
                 # this is a toolcall response
-                yield token
+                pass
             elif token_type == "token_usage":
                 # this is the final token usage count, usually emitted at the end of the stream
                 token_usage = token.get("content")
@@ -422,7 +422,6 @@ class Channel:
                     await self.context.chat.set_token_usage(token_usage)
 
                     fetched_token_usage = True
-                yield token
 
         if not fetched_token_usage:
             # yield an estimated token usage if the API didn't provide one

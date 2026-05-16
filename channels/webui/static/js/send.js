@@ -17,6 +17,37 @@ function resetStreamState() {
     clearStreamingToolCalls();
 }
 
+// =============================================================================
+// Timing Statistics State
+// =============================================================================
+let currentTokensPerSecond = 0;
+let promptProgress = null;
+let totalPromptTokens = 0;
+let totalGenTokens = 0;
+
+// Helper to calculate stats
+function updateTimingStats(timings) {
+    if (!timings) return;
+
+    // Update prompt progress
+    if (timings.prompt_n) {
+        totalPromptTokens = timings.prompt_n;
+    }
+
+    // Update generation stats
+    if (timings.predicted_n && timings.predicted_ms) {
+        const tps = (timings.predicted_n / timings.predicted_ms) * 1000; // tokens / ms * 1000 = t/s
+        currentTokensPerSecond = tps;
+        totalGenTokens = timings.predicted_n;
+    }
+
+    // Update UI if element exists
+    const statsContainer = document.getElementById('message-stats-container');
+    if (statsContainer) {
+        renderStats(statsContainer, currentTokensPerSecond, totalGenTokens);
+    }
+}
+
 function appendStreamText(type, text, typewriterEnabled = true) {
     const last = streamSegments[streamSegments.length - 1];
 
@@ -263,6 +294,12 @@ async function send(providedContent = null) {
     const aiActions = createActionButtons('assistant', 'streaming', '', true);
     aiWrapper.appendChild(aiActions);
 
+    // Insert stats container
+    const statsDiv = document.createElement('div');
+    statsDiv.id = 'message-stats-container';
+    statsDiv.className = 'generation-stats-bar';
+    aiWrapper.appendChild(statsDiv);
+
     let streamHadError = false;
     let streamStarted = false;
 
@@ -280,7 +317,7 @@ async function send(providedContent = null) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payloadBody),
-                                     signal: currentController.signal
+            signal: currentController.signal
         });
 
         if (!response.ok) {
@@ -321,6 +358,35 @@ async function send(providedContent = null) {
                     if (data._meta) {
                         const { type: metaType } = data._meta;
 
+                        // Handle prompt processing progress
+                        if (data.type === 'prompt_progress') {
+                            const prog = data.content;
+
+                            if (!streamStarted) {
+                                const cache = prog.cache || 0;
+                                const processed = prog.processed - cache;
+                                const total = prog.total - cache;
+                                const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+                                const elapsed = prog.time_ms / 1000;
+                                const remaining = (total - processed) > 0
+                                ? (elapsed / processed) * (total - processed)
+                                : 0;
+
+                                if (typing) {
+                                    // Inject the fancy structure
+                                    typing.innerHTML = `
+                                    <div class="prompt-processing-indicator">
+                                    <div class="tool-processing-text">Processing: ${percent}%</div>
+                                    <div class="tool-processing-text" style="opacity: 0.7">(ETA: ${Math.ceil(remaining)}s)</div>
+                                    </div>
+                                    `;
+                                    typing.classList.remove('hidden');
+                                }
+                            }
+                        }
+
+
                         if (metaType === 'commit') {
                             // Signal that data streaming is complete so the typewriter can finish
                             isDataStreaming = false;
@@ -360,6 +426,9 @@ async function send(providedContent = null) {
                             removePlaceholder();
                             startStreamingUI(aiWrapper, typing);
                             streamStarted = true;
+
+                            // Remove processing text
+                            const typingEl = document.getElementById('typing-indicator');
                         }
                         const token = data.content || data.token || '';
                         if (token) {
@@ -430,6 +499,12 @@ async function send(providedContent = null) {
                         updateTokenUsage();
                     }
 
+                    // Timing updates
+                    if (data.type === 'timings') {
+                        updateTimingStats(data.content);
+                    }
+
+                    console.log(data);
                 } catch (e) {
                     console.error("Error parsing stream line:", e, line);
                 }
@@ -644,6 +719,22 @@ async function sendCommand(message) {
         console.error('Command failed:', err);
     }
 }
+
+function renderStats(container, tps, genTokens) {
+    // Format tokens per second
+    const tpsText = tps > 0 ? tps.toFixed(2) : "0.00";
+
+    // Generate icon (you can replace with your SVG)
+    const sparkleIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>`;
+
+    container.innerHTML = `
+    <div class="stat-badge">
+    <span class="stat-icon">${sparkleIcon}</span>
+    <span class="stat-value">${tpsText} t/s</span>
+    </div>
+    `;
+}
+
 
 // =============================================================================
 // Typewriter for Segments

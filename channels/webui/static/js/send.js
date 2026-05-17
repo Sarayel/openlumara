@@ -289,9 +289,7 @@ async function send(providedContent = null) {
     let playedCompletionSound = false;
 
     // Play send message sound
-    if (soundEnabled) {
-        TypewriterAudioManager.play('send_message');
-    }
+    TypewriterAudioManager.play('send_message');
 
     // Create AI wrapper
     const aiWrapper = document.createElement('div');
@@ -374,9 +372,7 @@ async function send(providedContent = null) {
 
                     // Track message type transitions to play reasoning end sound
                     if (lastMessageType === 'reasoning' && data.type !== 'reasoning' && data.type !== undefined) {
-                        if (soundEnabled) {
-                            TypewriterAudioManager.play('reasoning_end');
-                        }
+                        TypewriterAudioManager.play('reasoning_end');
                     }
                     lastMessageType = data.type;
 
@@ -450,7 +446,7 @@ async function send(providedContent = null) {
                             // Wait for typewriter to finish before finalizing
                             if (isTypewriterRunning) {
                                 await waitForTypewriter();
-                            } else if (!useTypewriter && soundEnabled) {
+                            } else if (!useTypewriter) {
                                 // Play completion sound if typewriter mode was off
                                 TypewriterAudioManager.play('completion');
                                 playedCompletionSound = true;
@@ -485,9 +481,7 @@ async function send(providedContent = null) {
                             streamStarted = true;
 
                             // Play response start sound
-                            if (soundEnabled) {
-                                TypewriterAudioManager.play('response_start');
-                            }
+                            TypewriterAudioManager.play('response_start');
 
                             // Hide fancy indicator and restore typing indicator
                             if (fancyProcessingIndicator) {
@@ -515,7 +509,7 @@ async function send(providedContent = null) {
                             }
 
                             // Play sound on every token if streaming sound is enabled AND typewriter mode is OFF
-                            if (!useTypewriter && soundEnabled && token.trim() !== '') {
+                            if (!useTypewriter && token.trim() !== '') {
                                 TypewriterAudioManager.play('token');
                             }
                         }
@@ -531,9 +525,7 @@ async function send(providedContent = null) {
                                 streamStarted = true;
 
                                 // Play response start sound
-                                if (soundEnabled) {
-                                    TypewriterAudioManager.play('response_start');
-                                }
+                                TypewriterAudioManager.play('response_start');
 
                                 // Hide fancy indicator and restore typing indicator
                                 if (fancyProcessingIndicator) {
@@ -550,7 +542,7 @@ async function send(providedContent = null) {
 
 
                             // Play sound on every token if streaming sound is enabled AND typewriter mode is OFF
-                            if (!useTypewriter && soundEnabled && token.trim() !== '') {
+                            if (!useTypewriter && token.trim() !== '') {
                                 TypewriterAudioManager.play('token');
                             }
                         }
@@ -620,7 +612,7 @@ async function send(providedContent = null) {
 
         if (isTypewriterRunning) {
             await waitForTypewriter();
-        } else if (!useTypewriter && !playedCompletionSound && soundEnabled) {
+        } else if (!useTypewriter && !playedCompletionSound) {
             // Play completion sound if typewriter mode was off
             TypewriterAudioManager.play('completion');
         }

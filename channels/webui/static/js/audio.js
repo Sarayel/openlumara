@@ -7,8 +7,11 @@ const TypewriterAudioManager = {
     audioContext: null,
     masterGainNode: null, // Reusable gain node for performance
     buffers: {
+        send_message: null,
+        response_start: null,
         typewriter: null,
-        completion: null
+        completion: null,
+        reasoning_end: null
     },
     volume: 1.0, // Default volume (0.0 to 1.0)
 
@@ -69,7 +72,7 @@ const TypewriterAudioManager = {
             });
         };
 
-        await Promise.all([load('typewriter'), load('completion')]);
+        await Promise.all([load('send_message'), load('response_start'), load('typewriter'), load('completion'), load('reasoning_end')]);
     },
 
     getAudioContext: function() {
@@ -135,8 +138,191 @@ const TypewriterAudioManager = {
 
     // Play the sound asynchronously to avoid UI blocking
     play: function(id) {
+        // Check if the specific sound type is enabled
+        if (localStorage.getItem(`${id}Enabled`) === 'false') {
+            return;
+        }
+
+        // ── Typing suppression during reasoning chime ──
+        if (id === 'typing' && this.isReasoningPlaying) {
+            return; // Skip typing sound while reasoning chime is active
+        }
+
         const buffer = this.buffers[id];
-        if (!buffer) return;
+        const typingFreq = Number(localStorage.getItem('typingFreq')) || 440;
+
+        if (!buffer) {
+            const ctx = this.getAudioContext();
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+            const configs = {
+                send_message:    { freq: 880,  dur: 0.25 },
+                response_start:  { freq: 440,  dur: 0.25 },
+                reasoning_end:   { freq: 220,  dur: 0.25 },
+                completion:      { freq: 440,  dur: 0.25 }
+            };
+
+            const cfg = configs[id] || { freq: 440, dur: 0.2 };
+            const t = ctx.currentTime;
+            const vol = this.volume;
+            const master = this.masterGainNode;
+
+            // ── Warmer: Lower cutoff + smoother roll-off ──
+            const lpf = ctx.createBiquadFilter();
+            lpf.type = 'lowpass';
+            lpf.frequency.value = 1800; // Reduced from 2kHz for more warmth
+            lpf.Q.value = 0.8; // Gentler slope, less harsh transition
+
+            // ── Helper: Schedule a single sine tone with smoother attack ──
+            const playTone = (freq, startTime, attack = 0, decay = 0.01, volScale = 0.15) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+
+                osc.connect(gain);
+                gain.connect(lpf);
+                lpf.connect(master);
+
+                // 3ms attack for a rounder, less clicky onset
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(vol * volScale, startTime + 0.003);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.003 + decay);
+
+                osc.start(startTime);
+                osc.stop(startTime + 0.003 + decay + 0.05);
+            };
+
+            // ── Helper: Schedule a panned harmonic tone ──
+            const playHarmonic = (freqMultiplier, delay, volScale = 0.12, pan = -0.2) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const panner = ctx.createStereoPanner();
+
+                osc.type = 'sine';
+                osc.frequency.value = cfg.freq * freqMultiplier;
+                panner.pan.value = pan;
+
+                osc.connect(gain);
+                gain.connect(panner);
+                panner.connect(lpf);
+                lpf.connect(master);
+
+                const t2 = t + delay;
+                gain.gain.setValueAtTime(0, t2);
+                gain.gain.linearRampToValueAtTime(vol * volScale, t2 + 0.003); // 3ms attack
+                gain.gain.exponentialRampToValueAtTime(0.001, t2 + 0.003 + 0.25);
+
+                osc.start(t2);
+                osc.stop(t2 + 0.3);
+            };
+
+            if (id === 'token') {
+                // very high-frequency sound inspired by what my GPU sounds like when generating tokens lol
+                const tokenFreq = Number(localStorage.getItem('tokenFreq')) || 9000;
+
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const lpf = ctx.createBiquadFilter(); // Local LPF to kill the static
+
+                osc.frequency.value = tokenFreq; // <-- Dynamic frequency
+                osc.type = 'sawtooth';
+
+                // LPF to tame harsh harmonics
+                lpf.type = 'lowpass';
+                lpf.frequency.value = 4000;
+                lpf.Q.value = 0.5;
+
+                // Proper envelope with decay
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(vol * 0.24, t + 0.002);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.010);
+
+                // Chain: osc → LPF → gain → master
+                osc.connect(lpf);
+                lpf.connect(gain);
+                gain.connect(master);
+
+                osc.start(t);
+                osc.stop(t + 0.013);
+                return;
+            }
+
+            if (id === 'typing') {
+                const freq = typingFreq;
+
+                const osc = ctx.createOscillator();
+                osc.type = 'sine'; // blip uses sine
+                osc.frequency.value = freq;
+
+                const gain = ctx.createGain();
+                gain.gain.value = 0;
+
+                // Chain: osc → LPF → gain → master
+                osc.connect(lpf);
+                lpf.connect(gain);
+                gain.connect(master);
+
+                osc.start(t);
+
+                // Envelope: 10ms attack, 100ms decay
+                // Adjusted volume to match token sound (~25%)
+                gain.gain.linearRampToValueAtTime(vol * 0.10, t + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.00001, t + 0.1);
+                osc.stop(t + 0.1);
+
+                return;
+            }
+
+            if (id === 'send_message') {
+                // First note (warm base, smooth attack)
+                playTone(300, t, 0.008, 0.06, 0.20);
+
+                // Second note (slightly higher, softer, clear spacing)
+                playTone(400, t + 0.08, 0.008, 0.06, 0.18);
+
+                return; // ⚠️ CRITICAL
+            }
+
+            if (id === 'response_start') {
+                // inverse of send_message
+
+                // Second note (slightly higher, softer, clear spacing)
+                playTone(400, t, 0.008, 0.06, 0.18);
+
+                // First note (warm base, smooth attack)
+                playTone(300, t + 0.08, 0.008, 0.06, 0.20);
+                return; // ⚠️ CRITICAL
+            }
+
+            if (id === 'reasoning_end') {
+                // Warm base tone (smoother attack, resolving decay)
+                this.isReasoningPlaying = true;
+
+                // Soft fifth harmonic (wider spacing)
+                playHarmonic(1.5, 0.10, 0.06, -0.3);
+
+                // Gentle octave harmonic (clear resolution)
+                playHarmonic(2.0, 0.20, 0.04, 0.3);
+
+                setTimeout(() => {
+                    this.isReasoningPlaying = false;
+                }, 250);
+            }
+
+            // === GENERIC FALLBACK (other sounds) ===
+            playTone(cfg.freq, t, 0, cfg.dur, 0.15);
+
+            if (id === 'completion') {
+                // First harmonic (softer, lower interval)
+                playHarmonic(1.5, 0.10, 0.08, -0.3);
+
+                // Second harmonic (gentle resolution)
+                playHarmonic(2.0, 0.22, 0.05, 0.3);
+            }
+
+        }
 
         // Use setTimeout(..., 0) to push execution to the next event loop tick.
         // This ensures the audio logic does not block the typewriter animation frame.
@@ -146,7 +332,7 @@ const TypewriterAudioManager = {
 
                 // Resume context if suspended (browser autoplay policy)
                 if (ctx.state === 'suspended') {
-                    ctx.resume();
+                    ctx.resume().catch(() => {});
                 }
 
                 const source = ctx.createBufferSource();
@@ -162,6 +348,7 @@ const TypewriterAudioManager = {
             }
         }, 0);
     }
+
 };
 
 // Initialize on load

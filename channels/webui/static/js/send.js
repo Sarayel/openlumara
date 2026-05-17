@@ -285,6 +285,14 @@ async function send(providedContent = null) {
     isDataStreaming = true;
     currentController = new AbortController();
 
+    const soundEnabled = localStorage.getItem("streamingSoundEnabled") === 'true';
+    let playedCompletionSound = false;
+
+    // Play send message sound
+    if (soundEnabled) {
+        TypewriterAudioManager.play('send_message');
+    }
+
     // Create AI wrapper
     const aiWrapper = document.createElement('div');
     aiWrapper.className = 'message-wrapper ai hidden streaming';
@@ -314,9 +322,6 @@ async function send(providedContent = null) {
     const typewriterEnabled = localStorage.getItem("typewriterEnabled") === 'true';
     const typewriterSpeed = parseInt(localStorage.getItem("typewriterSpeed") ?? "30", 10);
     const useTypewriter = typewriterEnabled && typewriterSpeed > 0;
-
-    const soundEnabled = localStorage.getItem("streamingSoundEnabled") === 'true';
-    let playedCompletionSound = false;
 
     let progressBarFill = null;
     let progressTextPercent = null;
@@ -351,6 +356,7 @@ async function send(providedContent = null) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let lastMessageType = null;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -365,6 +371,14 @@ async function send(providedContent = null) {
 
                 try {
                     const data = JSON.parse(line.slice(6));
+
+                    // Track message type transitions to play reasoning end sound
+                    if (lastMessageType === 'reasoning' && data.type !== 'reasoning' && data.type !== undefined) {
+                        if (soundEnabled) {
+                            TypewriterAudioManager.play('reasoning_end');
+                        }
+                    }
+                    lastMessageType = data.type;
 
                     // Handle metadata
                     if (data._meta) {
@@ -470,6 +484,11 @@ async function send(providedContent = null) {
                             startStreamingUI(aiWrapper, typing);
                             streamStarted = true;
 
+                            // Play response start sound
+                            if (soundEnabled) {
+                                TypewriterAudioManager.play('response_start');
+                            }
+
                             // Hide fancy indicator and restore typing indicator
                             if (fancyProcessingIndicator) {
                                 fancyProcessingIndicator.remove();
@@ -497,7 +516,7 @@ async function send(providedContent = null) {
 
                             // Play sound on every token if streaming sound is enabled AND typewriter mode is OFF
                             if (!useTypewriter && soundEnabled && token.trim() !== '') {
-                                TypewriterAudioManager.play('typewriter');
+                                TypewriterAudioManager.play('token');
                             }
                         }
                     }
@@ -511,6 +530,11 @@ async function send(providedContent = null) {
                                 startStreamingUI(aiWrapper, typing);
                                 streamStarted = true;
 
+                                // Play response start sound
+                                if (soundEnabled) {
+                                    TypewriterAudioManager.play('response_start');
+                                }
+
                                 // Hide fancy indicator and restore typing indicator
                                 if (fancyProcessingIndicator) {
                                     fancyProcessingIndicator.remove();
@@ -523,6 +547,12 @@ async function send(providedContent = null) {
 
                             appendStreamText('reasoning', token);
                             renderStreamSegments(aiMsgDiv);
+
+
+                            // Play sound on every token if streaming sound is enabled AND typewriter mode is OFF
+                            if (!useTypewriter && soundEnabled && token.trim() !== '') {
+                                TypewriterAudioManager.play('token');
+                            }
                         }
                     }
 
@@ -838,7 +868,7 @@ async function startTypewriterProcessSegments(msgDiv) {
                 scrollToBottomDelayed();
 
                 if (item.char.trim() !== '') {
-                    TypewriterAudioManager.play('typewriter');
+                    TypewriterAudioManager.play('typing');
                 }
             }
 

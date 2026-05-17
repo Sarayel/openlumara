@@ -2547,29 +2547,6 @@ function createThemeSection() {
     audioControls = document.createElement('div');
     audioControls.className = 'settings-control-group';
 
-    // Streaming Sound Toggle
-    const savedStreamingSoundEnabled = localStorage.getItem('streamingSoundEnabled') === 'true';
-
-    const streamingSoundToggleRow = document.createElement('div');
-    streamingSoundToggleRow.className = 'toggle-row';
-    streamingSoundToggleRow.innerHTML = `
-    <div class="toggle-info">
-    <span class="toggle-label">Enable Streaming Sound</span>
-    <span class="toggle-description">Play typing sound on every token during streaming, even without typewriter animation</span>
-    </div>
-    <label class="toggle-switch">
-    <input type="checkbox" id="streaming-sound-enabled-checkbox" ${savedStreamingSoundEnabled ? 'checked' : ''}>
-    <span class="toggle-slider"></span>
-    </label>
-    `;
-
-    const streamingSoundCheckbox = streamingSoundToggleRow.querySelector('#streaming-sound-enabled-checkbox');
-    streamingSoundCheckbox.addEventListener('change', function() {
-        localStorage.setItem('streamingSoundEnabled', this.checked ? 'true' : 'false');
-    });
-
-    audioControls.appendChild(streamingSoundToggleRow);
-
     // Volume Control
     const currentVolume = Math.round((parseFloat(localStorage.getItem('typewriterVolume') || '1.0')) * 100);
 
@@ -2653,12 +2630,14 @@ function createThemeSection() {
 
     const createSoundInput = (id, labelText, iconPath, savedName) => {
         const hasAudio = isAudioLoaded(id);
+        const isEnabled = localStorage.getItem(`${id}Enabled`) !== 'false'; // Default to true
 
         const container = document.createElement('div');
         container.className = 'sound-input-card';
         container.dataset.soundId = id;
 
         container.innerHTML = `
+        <div class="sound-header">
         <div class="sound-icon">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         ${iconPath}
@@ -2667,6 +2646,12 @@ function createThemeSection() {
         <div class="sound-info">
         <span class="sound-label">${labelText}</span>
         <span class="sound-filename ${hasAudio ? 'loaded' : ''}" id="${id}-filename">${savedName || 'No file selected'}</span>
+        </div>
+        <label class="sound-toggle">
+        <span class="toggle-label">Enabled</span>
+        <input type="checkbox" id="${id}-enabled-checkbox" ${isEnabled ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+        </label>
         </div>
         <div class="sound-actions">
         <button type="button" class="sound-action-btn preview" id="${id}-preview-btn" title="Preview sound" ${!hasAudio ? 'disabled' : ''}>
@@ -2758,30 +2743,165 @@ function createThemeSection() {
             fileInput.value = '';
         });
 
+        // Toggle event listener
+        const enabledCheckbox = container.querySelector(`#${id}-enabled-checkbox`);
+        enabledCheckbox.addEventListener('change', function() {
+            localStorage.setItem(`${id}Enabled`, this.checked ? 'true' : 'false');
+        });
+
         return container;
     };
 
     const typewriterIcon = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
     const completionIcon = '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>';
 
+    const sendIcon = '<path d="M21 15v-8H3v8"></path><polyline points="10 7 15 12 20 7"></polyline><line x1="15" y1="12" x2="15" y2="20"></line>';
+
+    const sendSoundInput = createSoundInput(
+        'send_message',
+        'Send Message Sound',
+        sendIcon,
+        localStorage.getItem("sendMessageSoundName")
+    );
+    soundContainer.appendChild(sendSoundInput);
+
+    const responseIcon = '<path d="M21 15v-8H3v8"></path><polyline points="7 8 12 3 17 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>';
+
+    const responseSoundInput = createSoundInput(
+        'response_start',
+        'Response Start Sound',
+        responseIcon,
+        localStorage.getItem("responseStartSoundName")
+    );
+    soundContainer.appendChild(responseSoundInput);
+
+    const tokenSoundInput = createSoundInput(
+        'token',
+        'Token Generation Sound',
+        typewriterIcon,
+        localStorage.getItem("tokenSoundName")
+    );
+    soundContainer.appendChild(tokenSoundInput);
+
     const twSoundInput = createSoundInput(
-        'typewriter',
+        'typing',
         'Typewriter Sound',
         typewriterIcon,
         localStorage.getItem("typewriterSoundName")
     );
     soundContainer.appendChild(twSoundInput);
 
+    const reasoningIcon = '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M10 12h4M16 12h4M12 8v4M12 16v4M19 12a7 7 0 0 1-14 0"></path>';
+
+    const reasoningSoundInput = createSoundInput(
+        'reasoning_end',
+        'Reasoning End Sound',
+        reasoningIcon,
+        localStorage.getItem("reasoningEndSoundName")
+    );
+    soundContainer.appendChild(reasoningSoundInput);
+
     const compSoundInput = createSoundInput(
         'completion',
         'Completion Sound',
         completionIcon,
         localStorage.getItem("completionSoundName")
-    );1
+    );
 
     soundContainer.appendChild(compSoundInput);
 
     audioControls.appendChild(soundContainer);
+
+    // === TYPING FREQUENCY SLIDER ===
+    const typingFreqRow = document.createElement('div');
+    typingFreqRow.className = 'slider-row';
+
+    const savedFreq = parseInt(localStorage.getItem('typingFreq')) || 600;
+    const freqMin = 100;
+    const freqMax = 8000;
+    const freqStep = 100;
+    const freqPercentage = ((savedFreq - freqMin) / (freqMax - freqMin)) * 100;
+
+    typingFreqRow.innerHTML = `
+    <div class="slider-header">
+    <span class="slider-label">Typing Frequency</span>
+    <span class="slider-value" id="typing-freq-value">${savedFreq} Hz</span>
+    </div>
+    <div class="slider-track-wrapper">
+    <div class="slider-track">
+    <input type="range" class="slider-input" id="typing-freq-slider"
+    min="${freqMin}" max="${freqMax}" step="${freqStep}" value="${savedFreq}">
+    <div class="slider-fill" id="freq-fill" style="width: ${freqPercentage}%"></div>
+    <div class="slider-handle" id="freq-handle" style="left: ${freqPercentage}%"></div>
+    </div>
+    <div class="slider-labels">
+    <span>${freqMin} Hz</span>
+    <span>${freqMax} Hz</span>
+    </div>
+    </div>
+    `;
+
+    const freqSlider = typingFreqRow.querySelector('#typing-freq-slider');
+    const freqDisplay = typingFreqRow.querySelector('#typing-freq-value');
+    const freqFill = typingFreqRow.querySelector('#freq-fill');
+    const freqHandle = typingFreqRow.querySelector('#freq-handle');
+
+    freqSlider.addEventListener('input', function() {
+        const val = parseInt(this.value);
+        const percentage = ((val - freqMin) / (freqMax - freqMin)) * 100;
+        freqDisplay.textContent = `${val} Hz`;
+        freqFill.style.width = `${percentage}%`;
+        freqHandle.style.left = `${percentage}%`;
+        localStorage.setItem('typingFreq', val);
+    });
+
+    audioControls.appendChild(typingFreqRow);
+
+    // === TOKEN GENERATION FREQUENCY SLIDER ===
+    const tokenFreqRow = document.createElement('div');
+    tokenFreqRow.className = 'slider-row';
+
+    const savedTokenFreq = parseInt(localStorage.getItem('tokenFreq')) || 8000;
+    const tokenFreqMin = 100;
+    const tokenFreqMax = 16000;
+    const tokenFreqStep = 100;
+    const tokenFreqPercentage = ((savedTokenFreq - tokenFreqMin) / (tokenFreqMax - tokenFreqMin)) * 100;
+
+    tokenFreqRow.innerHTML = `
+    <div class="slider-header">
+    <span class="slider-label">Token Generation Sound Frequency</span>
+    <span class="slider-value" id="token-freq-value">${savedTokenFreq} Hz</span>
+    </div>
+    <div class="slider-track-wrapper">
+    <div class="slider-track">
+    <input type="range" class="slider-input" id="token-freq-slider"
+    min="${tokenFreqMin}" max="${tokenFreqMax}" step="${tokenFreqStep}" value="${savedTokenFreq}">
+    <div class="slider-fill" id="token-freq-fill" style="width: ${tokenFreqPercentage}%"></div>
+    <div class="slider-handle" id="token-freq-handle" style="left: ${tokenFreqPercentage}%"></div>
+    </div>
+    <div class="slider-labels">
+    <span>${tokenFreqMin} Hz</span>
+    <span>${tokenFreqMax} Hz</span>
+    </div>
+    </div>
+    `;
+
+    const tokenFreqSlider = tokenFreqRow.querySelector('#token-freq-slider');
+    const tokenFreqDisplay = tokenFreqRow.querySelector('#token-freq-value');
+    const tokenFreqFill = tokenFreqRow.querySelector('#token-freq-fill');
+    const tokenFreqHandle = tokenFreqRow.querySelector('#token-freq-handle');
+
+    tokenFreqSlider.addEventListener('input', function() {
+        const val = parseInt(this.value);
+        const percentage = ((val - tokenFreqMin) / (tokenFreqMax - tokenFreqMin)) * 100;
+        tokenFreqDisplay.textContent = `${val} Hz`;
+        tokenFreqFill.style.width = `${percentage}%`;
+        tokenFreqHandle.style.left = `${percentage}%`;
+        localStorage.setItem('tokenFreq', val);
+    });
+
+    audioControls.appendChild(tokenFreqRow);
+
 
     audioSection.appendChild(audioControls);
 

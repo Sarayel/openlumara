@@ -1920,6 +1920,67 @@
     background: color-mix(in srgb, var(--accent) 5%, var(--bg-tertiary));
 }
 
+.sound-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.sound-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    cursor: pointer;
+}
+
+.sound-toggle input[type="checkbox"] {
+    display: none;
+}
+
+.sound-toggle .toggle-slider {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    transition: all 0.2s ease;
+}
+
+.sound-toggle .toggle-slider::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background-color: var(--text-muted);
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.sound-toggle:hover .toggle-slider {
+    border-color: var(--accent);
+}
+
+.sound-toggle input:checked + .toggle-slider {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.sound-toggle input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+    background-color: white;
+}
+
+.sound-toggle .toggle-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    user-select: none;
+}
+
 .sound-icon {
     display: flex;
     align-items: center;

@@ -321,15 +321,14 @@ const TypewriterAudioManager = {
             }
 
             if (id === 'reasoning_end') {
-                // Warm base tone (smoother attack, resolving decay)
                 this.isReasoningPlaying = true;
 
-                // Gentle octave harmonic (clear resolution)
-                playHarmonic(1.5, 0.05, 0.7, 0.3);
+                // Gentle bell-like chime: fundamental + octave overtone
+                playHarmonic(2.0, 0.05, 0.6, 0.2);
 
                 setTimeout(() => {
                     this.isReasoningPlaying = false;
-                }, 250);
+                }, 450);
             }
 
             // === GENERIC FALLBACK (other sounds) ===

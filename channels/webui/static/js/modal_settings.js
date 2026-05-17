@@ -2792,7 +2792,7 @@ function createThemeSection() {
 
     const reasoningSoundInput = createSoundInput(
         'reasoning_end',
-        'Reasoning End Sound',
+        'Thinking Done Sound',
         reasoningIcon
     );
     soundContainer.appendChild(reasoningSoundInput);

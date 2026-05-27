@@ -103,7 +103,7 @@ class Calendar(core.module.Module):
         # display appointments between certain range (days before -> center (today) -> days after. divide by 2?)
         matches = []
 
-        date_range = self.config.get("range", default=7)
+        date_range = int(self.config.get("range", default=7))
         day_margin = date_range/2 # amount of days before and after today to filter by
 
         today = datetime.datetime.today()

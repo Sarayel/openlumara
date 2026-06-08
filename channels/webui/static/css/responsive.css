@@ -69,10 +69,3 @@
     .chat-pane { width: 280px; }
     .category-pane { width: 140px; min-width: 140px; }
 }
-
-/* Large Desktop */
-@media (min-width: 1400px) {
-    .app-container {
-        max-width: 1200px;
-    }
-}

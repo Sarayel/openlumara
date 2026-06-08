@@ -70,6 +70,14 @@ function applyTheme(family, mode) {
         }
     }
 
+    // Switch code syntax highlighting theme based on mode
+    const codeThemeLink = document.getElementById('code-theme');
+    if (codeThemeLink) {
+        codeThemeLink.href = mode === 'dark'
+            ? '/static/css/code-themes/github-dark.css'
+            : '/static/css/code-themes/github-light.css';
+    }
+
     const finalThemeId = buildThemeId(family, currentThemeMode);
     const finalTheme = themes[finalThemeId];
 

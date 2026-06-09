@@ -217,8 +217,21 @@ class StorageDict(dict):
             else:
                 result[full_key] = value
 
-        print(result)
         return result
+
+    def _delete_nested_key(self, flat_key):
+        """Delete a key from the nested dict structure."""
+        # Convert nested dict to flat keys
+        flat_dict = self._flatten_nested_keys(dict(self))
+        
+        # Delete the key if it exists
+        if flat_key in flat_dict:
+            del flat_dict[flat_key]
+        
+        # Convert back to nested dict and update self
+        nested_dict = self._parse_nested_keys(flat_dict)
+        self.clear()
+        self.update(nested_dict)
 
     def save(self):
         """save content to file"""
@@ -238,10 +251,22 @@ class StorageDict(dict):
 
                 # flatten nested dict to path keys
                 flat_items = self._flatten_nested_keys(dict(self))
+                failed_keys = []
 
-                for key, content in flat_items.items():
-                    # Use sandbox_path to safely resolve and validate the target path
-                    name = core.sandbox_path(self.path, f"{key}.md")
+                # Iterate over a list of items to avoid "dictionary changed size during iteration" error
+                for key, content in list(flat_items.items()):
+                    try:
+                        # Use sandbox_path to safely resolve and validate the target path
+                        name = core.sandbox_path(self.path, f"{key}.md")
+                    except ValueError as e:
+                        # If validation fails (e.g., path traversal), delete the key
+                        # from the in-memory dictionary to keep it clean.
+                        self._delete_nested_key(key)
+                        # Also remove from flat_items to ensure file cleanup logic works correctly
+                        del flat_items[key]
+                        failed_keys.append((key, str(e)))
+                        continue  # Skip saving this file
+
                     file_dir = os.path.dirname(name)
 
                     if not os.path.exists(file_dir):
@@ -249,6 +274,11 @@ class StorageDict(dict):
 
                     with open(name, "w", encoding="utf-8") as f:
                         f.write(content)
+
+                # Raise an error if any keys were skipped due to validation failure
+                if failed_keys:
+                    error_msg = "Failed to save the following keys due to validation errors:\n" + "\n".join([f"- {k}: {e}" for k, e in failed_keys])
+                    raise ValueError(error_msg)
 
                 # remove files that were deleted
                 for root, dirs, files in os.walk(self.path, topdown=False):

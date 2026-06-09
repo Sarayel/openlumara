@@ -846,7 +846,7 @@ function createActionButtons(role, index, content, disabled = false) {
     };
     actions.appendChild(copyBtn);
 
-    if (role === 'user') {
+    if (role === 'user' || role === 'assistant') {
         const editBtn = document.createElement('button');
         editBtn.className = 'message-action-btn';
         editBtn.innerHTML = ICONS.edit;

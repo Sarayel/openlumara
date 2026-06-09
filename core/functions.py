@@ -3,7 +3,7 @@ import os
 import sys
 import time
 import traceback
-import urllib.parse
+import urllib
 
 def log(category: str, msg: str):
     """simple console log"""
@@ -56,7 +56,8 @@ def get_path(path: str = ""):
     return full_path
 
 def get_data_path(subpath: str = ""):
-    """get path to a file/folder within the data directory"""
+    """get path to a file/folder within the data directory.
+    subpath: a string representing a path within the data folder (validated for safety)."""
     data_folder = core.config.get("core", {}).get("data_folder", "data")
     data_dir = get_path(data_folder)
     
@@ -79,7 +80,8 @@ def get_data_path(subpath: str = ""):
 
 def validate_path_in_directory(base_dir: str, target_path: str) -> str | None:
     """
-    Validates that target_path is safely within base_dir (sandbox).
+    Validates that target_path is safely within base_dir.
+    Returns the relative path if valid, None if invalid.
     Prevents path traversal, symlinks, and null bytes.
     """
     # Normalize the path first to catch tricks like a/./b/../c

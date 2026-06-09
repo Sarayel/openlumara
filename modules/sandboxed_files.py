@@ -56,21 +56,71 @@ class SandboxedFiles(core.module.Module):
             os.makedirs(self.trash_path, exist_ok=True)
 
     def _validate_absolute_path(self, abs_path: str) -> str | None:
-        """Validates that an absolute path is within the sandbox. Delegates to core.validate_path_in_directory."""
-        return core.validate_path_in_directory(self.sandbox_path, abs_path)
+        """
+        Validate that an absolute path is within the sandbox.
+        Returns the relative path if valid, None if invalid.
+        Reuses the same validation logic as _get_sandbox_path.
+        """
+        try:
+            real_path = os.path.realpath(abs_path)
+        except (OSError, ValueError):
+            return None
+
+        if os.path.islink(abs_path):
+            return None
+
+        sandbox_prefix = self.sandbox_path + os.path.sep
+
+        if sys.platform == "win32":
+            check_path = real_path.lower()
+            check_prefix = sandbox_prefix.lower()
+        else:
+            check_path = real_path
+            check_prefix = sandbox_prefix
+
+        if check_path.startswith(check_prefix) or check_path == self.sandbox_path:
+            return self._strip_sandbox_path(real_path)
+
+        return None
 
     def _get_sandbox_path(self, target_path: str):
-        path = target_path.strip(os.path.sep)
+        path = target_path
+
+        # remove path separator at the beginning and end
+        path = path.strip(os.path.sep)
+
+        # remove the sandbox path from it in case the AI inserts it
+        path = self._strip_sandbox_path(path)
+
+        # basic path traversal prevention
+        decoded = path
+        for _ in range(3):  # Handle double/triple encoding
+            decoded = urllib.parse.unquote(decoded)
+
+        if ".." in decoded or "\x00" in decoded:
+            raise ValueError("Path traversal is not allowed")
+
+        # block symlink paths
+        if hasattr(os, 'O_NOFOLLOW'):
+            # check if any component is a symlink
+            parts = path.split(os.path.sep)
+            for i, part in enumerate(parts):
+                if i == 0:
+                    continue  # Skip root
+                test_path = os.path.join(self.sandbox_path, *parts[:i])
+                if os.path.islink(test_path):
+                    raise ValueError("Symlinks are not allowed inside the sandbox")
+
         if not path:
             return self.sandbox_path
-        
-        # Normalize to catch traversal tricks
-        path = os.path.normpath(path)
-        
-        full_path = os.path.join(self.sandbox_path, path)
-        validated = core.validate_path_in_directory(self.sandbox_path, full_path)
+
+        # more path traversal protection
+        path_in_sandbox = os.path.join(self.sandbox_path, os.path.normpath(path))
+        validated = self._validate_absolute_path(path_in_sandbox)
+
         if validated is None:
             raise ValueError("Access denied: target path is outside sandbox")
+
         return os.path.join(self.sandbox_path, validated)
 
     def _strip_sandbox_path(self, path: str):

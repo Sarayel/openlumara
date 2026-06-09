@@ -2225,81 +2225,81 @@ const themes = {
         }
     },
     'light-sakura': {
-        name: 'Sakura',
+        name: 'Sakura Dream',
         mode: 'light',
         vars: {
             // === TYPOGRAPHY ===
             '--font-primary': "'Indie Flower', sans-serif",
             '--font-display': "'Indie Flower', sans-serif",
 
-            // === SHAPES (Bubbly) ===
-            '--radius-sm': '12px',
-            '--radius-md': '20px',
-            '--radius-lg': '30px',
+            // === SHAPES (Bubbly & Soft) ===
+            '--radius-sm': '16px',
+            '--radius-md': '24px',
+            '--radius-lg': '32px',
             '--radius-xl': '999px',
 
-            // === COLORS (Hot Pink Palette) ===
-            '--bg-primary': '#ffe2ef',
-            '--bg-secondary': '#ffcbe2',
-            '--bg-tertiary': '#ffd2e6',
-            '--bg-message-user': 'linear-gradient(135deg, #ff9ecc 0%, #ff85c0 100%)',
-            '--bg-message-ai': '#ffc9dc',
-            '--bg-message-announce': 'linear-gradient(135deg, #fff0f5 0%, #ffe0eb 100%)',
-            '--bg-message-command': 'linear-gradient(135deg, #ff85c0 0%, #ff69b4 100%)', // Hot Pink
-            '--bg-message-command-response': 'linear-gradient(135deg, #ffd6e7 0%, #ffcae0 100%)', // Soft Pink
-            '--bg-input': '#ffd3ea',
-            '--bg-code': '#fff5f8',
-            '--bg-sidebar': '#ffe8f0',
+            // === COLORS (Soft Pastel & Dusty Rose) ===
+            '--bg-primary': '#fff9fb',
+            '--bg-secondary': '#fff0f5',
+            '--bg-tertiary': '#fce4ec',
+            '--bg-message-user': 'linear-gradient(135deg, #f8bbd0 0%, #f48fb1 100%)',
+            '--bg-message-ai': '#fce4ec',
+            '--bg-message-announce': 'linear-gradient(135deg, #f3e5f5 0%, #f8bbd0 100%)',
+            '--bg-message-command': 'linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%)',
+            '--bg-message-command-response': 'linear-gradient(135deg, #fff0f5 0%, #fce4ec 100%)',
+            '--bg-input': '#fff5f8',
+            '--bg-code': '#fff0f5',
+            '--bg-sidebar': '#fff0f5',
 
-            '--border-color': '#ffb8d9',
-            '--border-message': '#ffc8e2',
-            '--border-user': '#ff69b4',
+            '--border-color': '#f8bbd0',
+            '--border-message': '#f48fb1',
+            '--border-user': '#f8bbd0',
 
-            '--text-primary': '#d63384',
-            '--text-secondary': '#e066a0',
-            '--text-muted': '#f090c0',
+            '--text-primary': '#4a3b47',
+            '--text-secondary': '#7c5c75',
+            '--text-muted': '#b392a6',
 
-            '--accent': '#ff1493',
-            '--accent-glow': 'rgba(255, 20, 147, 0.5)',
-            '--accent-secondary': '#c71585',
+            '--accent': '#d896b0',
+            '--accent-glow': 'rgba(216, 150, 176, 0.4)',
+            '--accent-secondary': '#c4829c',
 
-            '--error': '#d63384', // Deep Pink (Readable Error)
-            '--error-bg': 'linear-gradient(135deg, #ffe0eb 0%, #ffd0e0 100%)',
-            '--error-border': '#ff69b4',
+            '--error': '#d32f2f',
+            '--error-bg': 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)',
+            '--error-border': '#ef9a9a',
 
-            '--important': '#ff1493', // Deep Pink instead of Yellow
-            '--important-bg': 'linear-gradient(135deg, #ffe0eb 0%, #ffd6e7 100%)',
-            '--important-border': '#ff69b4',
+            '--important': '#d896b0',
+            '--important-bg': 'linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%)',
+            '--important-border': '#f8bbd0',
 
-            '--info': '#db2777', // Pink instead of Blue
-            '--info-bg': 'linear-gradient(135deg, #fff0f5 0%, #ffe4ec 100%)',
-            '--info-border': '#f8bbd0',
+            '--info': '#9575cd',
+            '--info-bg': 'linear-gradient(135deg, #ede7f6 0%, #d1c4e9 100%)',
+            '--info-border': '#b39ddb',
 
-            '--button-bg': 'linear-gradient(135deg, #ff69b4 0%, #ff1493 100%)',
-            '--button-hover': 'linear-gradient(135deg, #ff85c0 0%, #ff69b4 100%)',
-            '--button-stop': 'linear-gradient(135deg, #ff85c0 0%, #ff69b4 100%)',
-            '--button-stop-hover': 'linear-gradient(135deg, #ff9ecc 0%, #ff85c0 100%)',
-            '--button-stop-glow': 'rgba(255, 20, 147, 0.4)',
+            '--button-bg': 'linear-gradient(135deg, #f8bbd0 0%, #f48fb1 100%)',
+            '--button-hover': 'linear-gradient(135deg, #f48fb1 0%, #ec407a 100%)',
+            '--button-stop': 'linear-gradient(135deg, #f8bbd0 0%, #f48fb1 100%)',
+            '--button-stop-hover': 'linear-gradient(135deg, #f48fb1 0%, #f8bbd0 100%)',
+            '--button-stop-glow': 'rgba(216, 150, 176, 0.4)',
 
-            '--scrollbar': '#ffb8d9',
-            '--scrollbar-hover': '#ff99cc',
+            '--scrollbar': '#f8bbd0',
+            '--scrollbar-hover': '#f48fb1',
 
-            '--shadow-soft': '0 4px 15px rgba(255, 20, 147, 0.15)',
-            '--shadow-glow': '0 0 25px var(--accent-glow)',
+            '--shadow-soft': '0 4px 20px rgba(232, 145, 176, 0.2)',
+            '--shadow-glow': '0 0 30px rgba(216, 150, 176, 0.3)',
 
-            '--tool-bg': '#ffd3ea',
+            '--tool-bg': '#fff0f5',
             '--tool-bg-secondary': '#fff5f8',
-            '--tool-border': '#ffc8e2',
-            '--tool-border-hover': '#ff99cc',
-            '--tool-pending-bg': 'rgba(255, 105, 180, 0.15)',
-            '--tool-pending-color': '#ff69b4',
-            '--tool-completed-bg': 'rgba(255, 20, 147, 0.15)',
-            '--tool-completed-color': '#ff1493',
+            '--tool-border': '#f8bbd0',
+            '--tool-border-hover': '#f48fb1',
+            '--tool-pending-bg': 'rgba(244, 143, 177, 0.1)',
+            '--tool-pending-color': '#ec407a',
+            '--tool-completed-bg': 'rgba(129, 199, 132, 0.1)',
+            '--tool-completed-color': '#66bb6a',
 
             // === DECORATION ===
-            '--bg-pattern': 'radial-gradient(#ffb8d9 1px, transparent 1px)',
-            '--message-decoration': '2px solid rgba(255, 182, 193, 0.5)',
-            '--avatar-shape': '30%'
+            '--bg-pattern': 'radial-gradient(#f8bbd0 1px, transparent 1px)',
+            '--message-decoration': '2px solid rgba(248, 187, 208, 0.6)',
+            '--avatar-shape': '35%'
         }
     },
     'dark-sakura': {

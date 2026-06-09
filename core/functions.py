@@ -25,35 +25,31 @@ def log_error(msg: str, e: Exception):
 
 def get_path(path: str = ""):
     """get path relative to the project root directory. returns root path if no path is specified."""
+    project_root = os.path.abspath(os.path.join(
+        os.path.dirname(__file__),
+        os.pardir
+    ))
+
     if not path:
-        return os.path.join(
-            os.path.dirname(__file__),
-            os.pardir
-        )
+        return project_root
 
-    if path.startswith(os.path.sep):
-        # is an absolute path
-        return path
-    else:
-        # is a relative path
-        return os.path.abspath(os.path.join(
-            os.path.dirname(__file__),
-            os.pardir,
-            path
-        ))
+    # is a relative path
+    return sandbox_path(project_root, path)
 
-def get_data_path():
+def get_data_path(subpath=None):
     """get path to the data directory. contains all persistent data used by the framework"""
 
-    data_path = core.get_path(
-        core.config.get("core", {}).get("data_folder", "data")
-    )
+    data_path = core.config.get("core", {}).get("data_folder", "data")
+
+    # if it's a relative path, resolve it from the project root
+    if not os.path.isabs(data_path):
+        data_path = core.get_path(data_path)
 
     # create it if it doesn't exist
     if not os.path.exists(data_path):
         os.makedirs(data_path, exist_ok=True)
 
-    return data_path
+    return sandbox_path(data_path, subpath) if subpath else data_path
 
 def remove_duplicates(lst: list):
     # removes duplicates from a list
@@ -64,7 +60,7 @@ def remove_duplicates(lst: list):
             new_lst.append(item)
     return new_lst
 
-def secure_path(base_path: str, requested_path: str) -> str:
+def sandbox_path(base_path: str, requested_path: str) -> str:
     """
     protects against path traversal attacks and the like
     """

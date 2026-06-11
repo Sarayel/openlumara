@@ -2070,6 +2070,13 @@ class Coder(modules.sandboxed_files.SandboxedFiles):
 
         await self._backup_file(file_path_str)
 
+        supported_formatters = []
+        for lang in self.FORMATTERS:
+            supported_formatters.extend(lang)
+
+        if formatter not in supported_formatters:
+            return self.result("error: unsupported formatter", success=False)
+
         try:
             lang = self._get_language_from_ext(file_path_str)
             formatters = self.FORMATTERS.get(lang, [])

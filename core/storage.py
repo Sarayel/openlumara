@@ -364,7 +364,7 @@ class StorageText:
             self.save()
 
     def __str__(self, *args, **kwargs):
-        return self._data
+        return self.get()
 
     def set(self, new_data: str):
         self._data = str(new_data)

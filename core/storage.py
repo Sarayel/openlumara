@@ -8,7 +8,7 @@ TEMPORARY = False
 
 class StorageList(list):
     """subclassed list that handles storage of data. supports a variety of storage formats."""
-    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, autoreload=True, *args):
+    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, *args):
         super().__init__(*args)
 
         # default to openlumara data folder if no path specified
@@ -39,7 +39,6 @@ class StorageList(list):
 
         self.type = file_type
         self.ext = file_ext
-        self.autoreload = autoreload
 
         self.path += f".{self.ext}"
 
@@ -115,14 +114,14 @@ class StorageList(list):
                 self.extend(data.split("\n"))
 
     def get(self, *args, **kwargs):
-        if self.autoreload and not TEMPORARY:
+        if not TEMPORARY:
             self.load()
 
         return super().get(*args)
 
 class StorageDict(dict):
     """subclassed dict that handles storage of data. supports a variety of storage formats."""
-    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, autoreload=True, *args):
+    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, *args):
         super().__init__(*args)
 
         # default to openlumara data folder if no path specified
@@ -133,7 +132,6 @@ class StorageDict(dict):
 
         self.name = os.path.basename(self.path)
         self.binary = False
-        self.autoreload = autoreload
 
         # lets not overwrite a builtin
         file_type = type
@@ -341,14 +339,14 @@ class StorageDict(dict):
         return True
 
     def get(self, *args, **kwargs):
-        if self.autoreload and not TEMPORARY:
+        if not TEMPORARY:
             self.load()
 
         return super().get(*args)
 
 class StorageText:
     """simple class that saves its content to a text file"""
-    def __init__(self, name: str, manager=None, path=None, autoload=True, autoreload=True, *args):
+    def __init__(self, name: str, manager=None, path=None, autoload=True, *args):
         super().__init__(*args)
 
         # default to openlumara data folder if no path specified
@@ -358,7 +356,6 @@ class StorageText:
         self.path = core.sandbox_path(path, name)
 
         self._data = ""
-        self.autoreload = autoreload
 
         if os.path.exists(self.path):
             if autoload and not TEMPORARY:
@@ -373,7 +370,7 @@ class StorageText:
         self._data = str(new_data)
         self.save()
     def get(self):
-        if self.autoreload and not TEMPORARY:
+        if not TEMPORARY:
             self.load()
         return str(self._data)
 

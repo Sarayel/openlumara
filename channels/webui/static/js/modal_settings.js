@@ -112,8 +112,9 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
 
         // Special handling for modules and channels
         if (topKey === 'modules' || topKey === 'user_modules' || topKey === 'channels') {
+            const hasToggleListStructure = isToggleList(topValue);
             const enabledItems = new Set(topValue.enabled || []);
-            const allItems = getAllToggleItems(topValue);
+            const allItems = hasToggleListStructure ? getAllToggleItems(topValue) : [];
 
             const itemDescriptions = {};
             const unsafeModules = {};
@@ -126,21 +127,26 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
                 }
             }
 
-            addToGroup('_direct_', null, {
-                key: topKey,
-                value: {
-                    enabled: topValue.enabled || [],
-                    disabled: topValue.disabled || [],
-                    descriptions: itemDescriptions,
-                    unsafeModules: unsafeModules
-                },
-                type: 'toggle_list',
-                isModuleList: true
-            }, true);
+            if (hasToggleListStructure) {
+                addToGroup('_direct_', null, {
+                    key: topKey,
+                    value: {
+                        enabled: topValue.enabled || [],
+                        disabled: topValue.disabled || [],
+                        descriptions: itemDescriptions,
+                        unsafeModules: unsafeModules
+                    },
+                    type: 'toggle_list',
+                    isModuleList: true
+                }, true);
+            }
 
             if (topValue.settings && typeof topValue.settings === 'object') {
-                for (const [itemName, itemSettings] of Object.entries(topValue.settings)) {
-                    if (!enabledItems.has(itemName)) continue;
+                const allSettingsKeys = hasToggleListStructure ? allItems : Object.keys(topValue.settings);
+                
+                for (const itemName of allSettingsKeys) {
+                    const itemSettings = topValue.settings[itemName];
+                    if (itemSettings === undefined) continue;
 
                     const groupKey = `${topKey}.settings.${itemName}`;
                     const groupTitle = formatLabel(itemName);
@@ -151,30 +157,29 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
                         flattenSettingsObject(itemSettings, groupKey, itemSchema, (item) => {
                             addToGroup(groupKey, groupTitle, item);
                         });
-                        } else {
-                            // Handle simple values by checking the schema for an explicit type
-                            let type = detectType(itemSettings, groupKey);
-                            if (itemSchema[itemName] && itemSchema[itemName].type) {
-                                type = itemSchema[itemName].type;
-                            }
-
-                            let description = FIELD_DESCRIPTIONS[groupKey] || null;
-                            if (!description && itemSchema[itemName] && itemSchema[itemName].description) {
-                                description = itemSchema[itemName].description;
-                            }
-
-                            addToGroup(groupKey, groupTitle, {
-                                key: groupKey,
-                                value: itemSettings,
-                                type: type,
-                                description: description,
-                                unsafe: itemSchema[itemName]?.unsafe || false,
-                                min: itemSchema[itemName]?.min,
-                                max: itemSchema[itemName]?.max,
-                                step: itemSchema[itemName]?.step
-                            });
+                    } else {
+                        // Handle simple values by checking the schema for an explicit type
+                        let type = detectType(itemSettings, groupKey);
+                        if (itemSchema[itemName] && itemSchema[itemName].type) {
+                            type = itemSchema[itemName].type;
                         }
 
+                        let description = FIELD_DESCRIPTIONS[groupKey] || null;
+                        if (!description && itemSchema[itemName] && itemSchema[itemName].description) {
+                            description = itemSchema[itemName].description;
+                        }
+
+                        addToGroup(groupKey, groupTitle, {
+                            key: groupKey,
+                            value: itemSettings,
+                            type: type,
+                            description: description,
+                            unsafe: itemSchema[itemName]?.unsafe || false,
+                            min: itemSchema[itemName]?.min,
+                            max: itemSchema[itemName]?.max,
+                            step: itemSchema[itemName]?.step
+                        });
+                    }
                 }
             }
             // ... (rest of module direct items logic remains the same)
@@ -640,7 +645,7 @@ function renderSettingsNav(categories) {
 
                     subBtn.onclick = (e) => {
                         e.stopPropagation();
-                        selectModule(moduleName);
+                        selectModule(moduleName, cat);
                     };
 
                     subList.appendChild(subBtn);
@@ -686,10 +691,10 @@ function switchSettingsCategory(category) {
 
 // Handle module selection from sub-list
 // Handle module selection from sub-list
-function selectModule(moduleName) {
-    activeSettingsCategory = 'modules';
+function selectModule(moduleName, category = 'modules') {
+    activeSettingsCategory = category;
     activeModule = moduleName;
-    renderSettingsForm(categories, 'modules');
+    renderSettingsForm(categories, category);
     renderSettingsNav(categories);
 }
 

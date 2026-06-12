@@ -558,6 +558,7 @@ async function loadSettings() {
     // 6. Render whatever we have (either the fresh data or the cached data)
     categories = organizeSettingsIntoCategories(settingsData, moduleInfoCache);
     const firstCategory = Object.keys(categories)[0];
+    activeSettingsCategory = firstCategory;
     renderSettingsForm(categories, firstCategory);
     renderSettingsNav(categories);
 
@@ -706,23 +707,32 @@ function switchSettingsCategory(category) {
     
     activeSettingsCategory = category;
     
-    // Expand the clicked category's sub-list, collapse others
     const isModules = category === 'modules' || category === 'user_modules';
     const isChannels = category === 'channels';
-    for (const key in modulesExpanded) {
-        modulesExpanded[key] = (isModules && key === category) || (isChannels && key === category);
-    }
 
-    document.querySelectorAll('.settings-nav-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.category === category);
-    });
+    if (isModules || isChannels) {
+        // Expand the clicked category's sub-list, collapse others
+        for (const key in modulesExpanded) {
+            modulesExpanded[key] = key === category;
+        }
 
-    // Reset active module/channel when switching to Modules/Channels category
-    if (category === 'modules' || category === 'user_modules') {
-        activeModule = null;
-    }
-    if (category === 'channels') {
-        activeChannel = null;
+        document.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.category === category);
+        });
+
+        // Reset active module/channel when switching to Modules/Channels category
+        if (isModules) {
+            activeModule = null;
+        }
+        if (isChannels) {
+            activeChannel = null;
+        }
+    } else {
+        // For other categories, clear all sidebar states
+        clearSidebarSelections();
+        document.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.category === category);
+        });
     }
 
     renderSettingsForm(categories, category);
@@ -767,7 +777,7 @@ function renderSettingsForm(categories, activeSettingsCategory = null) {
         sortedCats.forEach(([cat, data]) => {
             const btn = document.createElement('button');
             btn.className = 'mobile-category-btn';
-            btn.style.cssText = 'display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: none; border: none; border-bottom: 1px solid var(--border-color); cursor: pointer; text-align: left; font-size: 0.95rem; color: var(--text-primary); transition: background 0.15s ease; width: 100%; margin: 0;';
+            btn.style.cssText = 'display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: none; border: none; cursor: pointer; text-align: left; font-size: 0.95rem; color: var(--text-primary); transition: background 0.15s ease; width: 100%; margin: 0;';
             btn.innerHTML = `${SETTINGS_ICONS[cat] || SETTINGS_ICONS.other} <span style="font-weight: 500; color: var(--text-primary);">${data.title}</span>`;
             btn.onclick = () => {
                 activeSettingsCategory = cat;
@@ -954,7 +964,7 @@ function renderSettingsForm(categories, activeSettingsCategory = null) {
                                     statusDiv.querySelector('.toggle-count').textContent = `${enabledSet.size} of ${filteredModules.length} enabled`;
 
                                     // Update data
-                                    updateToggleListData(toggleListKey, Array.from(enabledSet), filteredModules);
+                                    updateToggleListData(toggleListKey, Array.from(enabledSet), allModules);
                                 });
 
                                 unifiedList.appendChild(card);
@@ -1037,10 +1047,13 @@ function renderSettingsForm(categories, activeSettingsCategory = null) {
                             return channelGroup && channelGroup.items.length > 0;
                         });
 
+                        // Capture the key from the toggle list item
+                        const channelListKey = directGroup.items[0].key;
+
                         // Status bar for enabled count
                         const statusDiv = document.createElement('div');
                         statusDiv.className = 'toggle-list-status';
-                        statusDiv.style.cssText = 'padding: 10px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); margin-bottom: 1px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;';
+                        statusDiv.style.cssText = 'padding: 10px 12px; background: var(--bg-secondary); margin-bottom: 1px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;';
                         statusDiv.innerHTML = `<span class="toggle-count">${enabledSet.size} of ${filteredChannels.length} enabled</span>`;
                         unifiedList.appendChild(statusDiv);
 
@@ -1056,7 +1069,7 @@ function renderSettingsForm(categories, activeSettingsCategory = null) {
 
                                 const card = document.createElement('button');
                                 card.className = 'channel-unified-card' + (isEnabled ? ' enabled' : '');
-                                card.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: var(--bg-secondary); border: none; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s ease; margin: 0; width: 100%; text-align: left; color: var(--text-primary);';
+                                card.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: var(--bg-secondary); border: 1px solid var(--border-color); margin-bottom: 1em; width: 100%; text-align: left; color: var(--text-primary);';
 
                                 card.innerHTML = `
                                     <div class="channel-card-left">
@@ -1095,7 +1108,7 @@ function renderSettingsForm(categories, activeSettingsCategory = null) {
                                     statusDiv.querySelector('.toggle-count').textContent = `${enabledSet.size} of ${filteredChannels.length} enabled`;
 
                                     // Update data
-                                    updateToggleListData(key, Array.from(enabledSet), filteredChannels);
+                                    updateToggleListData(channelListKey, Array.from(enabledSet), allChannels);
                                 });
 
                                 unifiedList.appendChild(card);
@@ -3763,6 +3776,26 @@ function updateThemeButtonsInSettings() {
     }
 }
 
+// Helper to clear all sidebar selections and collapse sub-lists
+function clearSidebarSelections() {
+    activeModule = null;
+    activeChannel = null;
+    modulesExpanded = { modules: false, user_modules: false, channels: false };
+
+    document.querySelectorAll('.settings-nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+
+    document.querySelectorAll('.module-sub-list button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    document.querySelectorAll('.module-sub-list').forEach(list => {
+        list.classList.remove('expanded');
+        list.style.display = 'none';
+    });
+}
+
 // Override toggleModal for settings
 const originalToggleModal = toggleModal;
 toggleModal = function(modalName) {
@@ -3781,22 +3814,7 @@ toggleModal = function(modalName) {
 
             // Clear active selections from sidebar when dialog closes
             activeSettingsCategory = null;
-            activeModule = null;
-            activeChannel = null;
-            modulesExpanded = { modules: false, user_modules: false, channels: false };
-
-            document.querySelectorAll('.settings-nav-item').forEach(item => {
-                item.classList.remove('active');
-            });
-
-            document.querySelectorAll('.module-sub-list button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-
-            document.querySelectorAll('.module-sub-list').forEach(list => {
-                list.classList.remove('expanded');
-                list.style.display = 'none';
-            });
+            clearSidebarSelections();
         } else {
             overlay.classList.add('show');
             modal.classList.add('show');

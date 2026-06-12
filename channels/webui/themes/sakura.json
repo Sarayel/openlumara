@@ -9,7 +9,7 @@
     "--bg-primary": "#0d0208",
     "--bg-secondary": "#1a0511",
     "--bg-tertiary": "#2d0a1f",
-    "--bg-message-user": "linear-gradient(135deg, #ff1493 0%, #ff80b3 100%)",
+    "--bg-message-user": "linear-gradient(135deg, #810a4d 0%, #67083e 100%)",
     "--bg-message-ai": "#1e0a14",
     "--bg-message-announce": "linear-gradient(135deg, #4a1428 0%, #2d0a1f 100%)",
     "--bg-message-command": "linear-gradient(135deg, #880e4f 0%, #ad1457 100%)",

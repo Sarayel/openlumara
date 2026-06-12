@@ -142,7 +142,7 @@ class SandboxedShell(core.module.Module):
             except Exception:
                 pass
 
-            return result
+        return result
 
     @core.module.command("shell", send_to_ai=True, help={
         "<cmd>": "runs a command in the sandboxed shell"

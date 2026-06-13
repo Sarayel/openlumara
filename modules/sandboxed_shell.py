@@ -1,5 +1,5 @@
+import asyncio
 import core
-import subprocess
 import shutil
 import os
 import uuid
@@ -9,6 +9,7 @@ class SandboxedShell(core.module.Module):
     """
     Lets your AI safely run shell commands in a disposable sandboxed container.
     Container is created, command runs, then container is immediately killed.
+    Runs asynchronously to prevent blocking the framework.
     """
 
     settings = {
@@ -87,8 +88,23 @@ class SandboxedShell(core.module.Module):
         """Generate a unique container name to avoid collisions"""
         return f"ol_{uuid.uuid4().hex[:8]}_{int(time.time()*1000)}"
 
+    async def _run_async_cmd(self, cmd_args, timeout=None):
+        """Helper method to run a command asynchronously"""
+        process = await asyncio.create_subprocess_exec(
+            *cmd_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            return stdout, stderr, process.returncode
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return None, None, -1
+
     async def run(self, command: str):
-        """Runs a command in a sandboxed container, then kills it."""
+        """Runs a command in a sandboxed container asynchronously."""
         if not self.runtime:
             return self.result("Docker or podman not available.", False)
 
@@ -102,13 +118,13 @@ class SandboxedShell(core.module.Module):
         # Build container run command with strict security settings
         # Use detached mode for better lifecycle control instead of --rm
         cmd = [self.runtime, 'run', '-d']
-        
+
         # Use gvisor runtime if available
         if self.use_gvisor:
             cmd.extend(['--runtime', 'runsc'])
             if self.runtime == "podman":
                 cmd.extend(["--runtime-flag", "ignore-cgroups"])
-            
+
         cmd.extend([
             '--name', self.container_name,
             '--user', uid,
@@ -120,67 +136,57 @@ class SandboxedShell(core.module.Module):
         ])
 
         if self.config.get("read_only", default=True):
-            cmd.append('--read-only')
-            cmd.extend(['--tmpfs', '/tmp']) # Allow writes to /tmp if read-only is active
+            cmd.extend(['--read-only', '--tmpfs', '/tmp'])
 
-        # Handle persistent vs temporary data
         if self.config.get("persistent_data", default=True):
             cmd.extend(['-v', f"{self.host_workspace}:/data:Z"])
         else:
             limit = self.config.get("temporary_filesystem_size_limit", default="512m")
             cmd.extend(['--tmpfs', f"/data:size={limit}"])
 
-        # Set working directory and add command
-        cmd.extend(['-w', '/data'])
-        cmd.extend([img, 'sh', '-c', command])
+        cmd.extend(['-w', '/data', img, 'sh', '-c', command])
 
         output_limit = self.config.get("output_limit")
 
-        process = None
         try:
             # Start the container in detached mode
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate(timeout=5)  # Quick timeout for container start
+            await self._run_async_cmd(cmd, timeout=5)
             
-            if process.returncode != 0:
-                return self.result(f"Failed to start container: {stderr.decode().strip()}", False)
-
             # Wait for container to finish with proper timeout
-            wait_process = subprocess.Popen(
-                [self.runtime, 'wait', self.container_name],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            
             try:
-                wait_process.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                # Kill the container first, then kill the wait process
-                subprocess.run([self.runtime, 'kill', self.container_name], capture_output=True, timeout=5)
-                wait_process.kill()
-                wait_process.communicate()  # Clean up the process
+                await asyncio.wait_for(
+                    self._run_async_cmd([self.runtime, 'wait', self.container_name], timeout=timeout),
+                    timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                # Kill the container first
+                await self._run_async_cmd([self.runtime, 'kill', self.container_name], timeout=5)
                 return self.result(f"Command timed out after {timeout}s", False)
 
             # Get container logs
-            log_process = subprocess.run(
-                [self.runtime, 'logs', self.container_name],
-                capture_output=True, timeout=5
+            stdout, stderr, _ = await self._run_async_cmd(
+                [self.runtime, 'logs', self.container_name], timeout=5
             )
             
+            stdout_text = stdout.decode().strip()[:output_limit] if stdout else ""
+            stderr_text = stderr.decode().strip()[:output_limit] if stderr else ""
+
             return self.result({
-                "stdout": log_process.stdout.decode().strip()[:output_limit],
-                "stderr": log_process.stderr.decode().strip()[:output_limit],
-                "exit_code": wait_process.returncode,
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+                "exit_code": 0,
                 "data_dir": "/data"
             })
 
-        except subprocess.TimeoutExpired:
-            return self.result(f"Command timed out after {timeout}s", False)
         except Exception as e:
             return self.result(f"Error running command: {e}", False)
         finally:
             # Always clean up the container
             try:
-                subprocess.run([self.runtime, 'rm', '-f', self.container_name], capture_output=True, timeout=5)
+                await asyncio.wait_for(
+                    self._run_async_cmd([self.runtime, 'rm', '-f', self.container_name], timeout=5),
+                    timeout=5
+                )
             except Exception:
                 pass  # Container cleanup failed, but don't fail the whole operation
 

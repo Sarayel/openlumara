@@ -185,16 +185,39 @@ class SandboxedShell(core.module.Module):
                 if not self.container_name or not self.runtime:
                     continue
 
-                # Use {{json .MemUsage}} to get raw bytes directly from the runtime
-                cmd = [self.runtime, 'stats', '--no-stream', '--format', '{{json .}}', self.container_name]
+                # fetch current memory usage of the container
                 try:
-                    stdout, stderr, exit_code, _ = await self._run_async_cmd(cmd, timeout=5.0, limit=1024)
-                    if not stdout:
-                        continue
+                    current_mem_bytes = None
 
-                    # Decode bytes to string once, then parse JSON
-                    stats_json = json.loads(stdout.decode('utf-8'))
-                    current_mem_bytes = stats_json.get("MemUsage", 0)
+                    # 1. try cgroup v2 and v1 paths
+                    for cgroup_path in ['/sys/fs/cgroup/memory.current',
+                                        '/sys/fs/cgroup/memory/memory.usage_in_bytes']:
+                        try:
+                            stdout, _, _, _ = await self._run_async_cmd(
+                                [self.runtime, 'exec', self.container_name, 'cat', cgroup_path],
+                                timeout=5.0, limit=1024
+                            )
+                            current_mem_bytes = float(stdout)
+                            break
+                        except Exception:
+                            continue
+
+                    # fallback to runtime stats if cgroup reads failed
+                    if current_mem_bytes is None:
+                        try:
+                            stdout, _, _, _ = await self._run_async_cmd(
+                                [self.runtime, 'stats', '--no-stream', '--format', '{{json .}}', self.container_name],
+                                timeout=5.0, limit=1024
+                            )
+                            stats_json = json.loads(stdout.decode('utf-8'))
+                            current_mem_bytes = stats_json.get("MemUsage", 0)
+                        except Exception:
+                            pass
+
+                    # skip loop iteration if we couldn't get a valid memory value
+                    if not current_mem_bytes:
+                        core.log(self.name, "Warning: Could not get RAM usage. Memory overflow attacks could occur.")
+                        continue
 
                     if current_mem_bytes and current_mem_bytes > limit_bytes:
                         core.log("sandbox_shell", f"Memory limit exceeded ({current_mem_bytes} > {limit_bytes} bytes). Killing container.")
@@ -347,7 +370,7 @@ class SandboxedShell(core.module.Module):
                 errors.append(f"Output truncated - limit: {output_limit} chars")
 
             if exit_code == 137:
-                errors.append(f"Command timed out after {timeout_val}s")
+                errors.append(f"Process forcibly killed")
 
             results = {
                 "stdout": stdout_text,

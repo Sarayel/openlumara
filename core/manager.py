@@ -70,8 +70,11 @@ class Manager:
             print("ERROR: At least one channel must be enabled in the config! Try the `cli` channel for a basic terminal UI.", flush=True)
             exit(1)
 
-        core.log("core", "Loading channels")
         import channels
+        import modules
+        import user_modules
+
+        core.log("core", "Loading channels")
         # install dependencies
         for chan_name in enabled_channels:
             core.modules.install_module_deps(channels, chan_name)
@@ -96,7 +99,6 @@ class Manager:
 
         if enabled_modules:
             core.log("core", "Loading core modules")
-            import modules
 
             # install dependencies
             for mod_name in enabled_modules:
@@ -115,7 +117,6 @@ class Manager:
 
         if enabled_user_modules:
             core.log("core", "Loading user modules")
-            import user_modules
 
             # install dependencies
             for mod_name in enabled_user_modules:

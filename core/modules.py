@@ -5,6 +5,11 @@ import sys
 import subprocess
 import ast
 
+try:
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    from importlib_metadata import version, PackageNotFoundError
+
 # modules that should have their prompts inserted even when tools are off
 nonagentic = ("characters", "time")
 
@@ -70,27 +75,16 @@ def _get_module_file_path(package, module_name):
     return None
 
 def _check_missing_deps(deps):
-    """return list of dependencies that are not installed"""
+    """return list of dependencies that are not installed (using pip package names)"""
     missing = []
     for dep in deps:
-        dep_name = dep.split('>=')[0].split('==')[0].split('<')[0].split('>')[0]
+        # extract the base package name (e.g. 'python-telegram-bot' from 'python-telegram-bot>=1.0')
+        pkg_name = dep.split('>=')[0].split('==')[0].split('<')[0].split('>')[0].strip()
         try:
-            __import__(dep_name)
-        except ImportError:
+            version(pkg_name)
+        except PackageNotFoundError:
             missing.append(dep)
     return missing
-
-def _is_package_installed(package_name):
-    """check if a package is actually installed via pip"""
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "show", package_name],
-            capture_output=True,
-            text=True
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
 
 def install_module_deps(package, module_name):
     """install dependencies for a module if missing"""
@@ -116,12 +110,10 @@ def uninstall_module_deps(package, module_name):
     if not deps:
         return
 
-    # only uninstall packages that are actually installed
-    installed = []
-    for dep in deps:
-        dep_name = dep.split('>=')[0].split('==')[0].split('<')[0].split('>')[0]
-        if _is_package_installed(dep_name):
-            installed.append(dep)
+    # Get list of missing dependencies
+    missing = _check_missing_deps(deps)
+    # Installed = Total - Missing
+    installed = [dep for dep in deps if dep not in missing]
 
     if installed:
         _uninstall_deps(module_name, installed)

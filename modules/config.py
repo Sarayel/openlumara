@@ -5,7 +5,7 @@ import copy
 class Config(core.module.Module):
     """Makes your AI aware of your openlumara settings and optionally allows it to change them"""
 
-    _header = "OpenLumara config"
+    header = "OpenLumara config"
 
     settings = {
         "put_config_in_system_prompt": {

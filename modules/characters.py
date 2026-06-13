@@ -18,13 +18,13 @@ class Characters(core.module.Module):
         }
     }
 
+    header = "Character"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.characters = core.storage.StorageDict("characters", type="json")
         self.user_profile = core.storage.StorageDict("character_user", "json")
         self.active = False
-
-        self._header = "Identity"
 
         if self.config.get("insert_system_prompt"):
             # disable character listing tool

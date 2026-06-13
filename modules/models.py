@@ -41,7 +41,7 @@ class Models(core.module.Module):
                 output += f"\n\nModels you can switch to using the models_switch() toolcall: "
                 output += ", ".join(self.models)
         else:
-            self._header = "current model"
+            self.header = "current model"
             output = current_model
 
         return output

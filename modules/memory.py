@@ -10,7 +10,7 @@ class Memory(core.module.Module):
 
     settings = {
         "insert_system_prompt": {
-            "default": True,
+            "default": False,
             "description": "Whether to put extra instructions in the system prompt to help the AI autonomously use its memory system, so that it remembers things without you having to explicitely ask it to."
         },
         "put_pinned_memories_in_system_prompt": {

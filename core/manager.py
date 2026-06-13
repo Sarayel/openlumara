@@ -323,9 +323,9 @@ class Manager:
             if module_sysprompt and (module_name not in core.config.get("modules").get("disabled_prompts", [])):
                 # default to module name
                 sysprompt_header = ' '.join(module_name.split('_')).capitalize()
-                if hasattr(module, "_header") and module._header:
+                if hasattr(module, "header") and module.header:
                     # but allow overriding the header
-                    sysprompt_header = module._header
+                    sysprompt_header = module.header
                 prompt_chunk = f"# {sysprompt_header}\n{str(module_sysprompt).strip()}"
 
                 if module_name in ("agent_framework_awareness", "identity", "memory", "writing_style"):

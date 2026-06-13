@@ -16,6 +16,8 @@ class SandboxedShell(core.module.Module):
     Runs asynchronously to prevent blocking the framework.
     """
 
+    header = "Shell"
+
     settings = {
         "internet_access": {
             "default": False,
@@ -169,6 +171,9 @@ class SandboxedShell(core.module.Module):
 
         return_code = process.returncode if process.returncode is not None else -1
         return bytes(stdout_buf), bytes(stderr_buf), return_code, timed_out
+
+    async def on_system_prompt(self):
+        return "".join(self._get_setup())
 
     async def on_background(self):
         """Monitors container memory usage and kills/restarts if limit is exceeded."""
@@ -418,14 +423,18 @@ class SandboxedShell(core.module.Module):
             return "\n\n".join(output) or "NO OUTPUT"
         return str(result)
 
-    @core.module.command("shell_setup", send_to_ai=True)
-    async def cmd_setup(self, args):
-        """Show details about your sandbox setup."""
+    def _get_setup(self):
         return (
             f"Runtime: {self.runtime or 'Not available'}\n"
             f"Container Name: {self.container_name or 'Not running'}\n"
             f"User ID: {self.config.get('run_as_user', default='') or 'Host User'}\n"
-            f"Image: {self.config.get('image', default='python:3.11-slim')}\n"
-            f"Persistent Data: {self.config.get('persistent_data', default=True)}\n"
+            f"Image: {self.config.get('image', default='python:3.11-slim')}\n",
+            f"Internet Access: {'enabled' if self.config.get('internet_access') else 'disabled'}\n",
+            f"Persistent Data: {self.config.get('persistent_data', default=True)}\n",
             f"gVisor Enabled: {self.use_gvisor}"
         )
+
+    @core.module.command("shell_setup", send_to_ai=True)
+    async def cmd_setup(self, args):
+        """Show details about your sandbox setup."""
+        return self._get_setup()

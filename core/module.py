@@ -104,6 +104,9 @@ class Module:
     async def on_end_prompt(self):
         """Overridable method that will insert it's return value into the end of the context (after the conversation history) if something is returned (defaults to None). Useful for things that change frequently, such as the time. Using the prompt at the end of conversation history means history does not have to be reprocessed if the prompt changes."""
         return None
+    async def on_message_inject(self):
+        """Overridable method that will inject whatever string you return here into the user's message. Very useful for adding extra data that should persist in history. For example, when injecting timestamps, instead of using the end prompt for it (which would only show the AI what time it currently is), it can now give the AI a sense of when every message was sent."""
+        return None
 
     async def on_ready(self):
         """This method will run once the module is ready to be used. Use it instead of __init__() if you can."""

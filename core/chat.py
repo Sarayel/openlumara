@@ -313,6 +313,13 @@ class Chat:
         if ghost:
             new_message["ghost"] = True
 
+        # inject any special messages coming from on_message_inject() in modules, such as timestamps
+        for module_name, module in self.channel.manager.modules.items():
+            if hasattr(module, 'on_message_inject'):
+                injection = await module.on_message_inject()
+                if injection:
+                    new_message["injection"] = str(injection)
+
         self.data[self.current]["messages"].append(new_message)
 
         index = len(self.data[self.current]["messages"]) - 1

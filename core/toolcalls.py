@@ -167,6 +167,7 @@ class ToolcallManager:
 
                 core.log("toolcall", tool_call_str)
 
+                func_response = None
                 try:
                     # do the function call and get it's result
                     async def _run_tool():

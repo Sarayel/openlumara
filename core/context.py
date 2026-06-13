@@ -128,6 +128,15 @@ class Context:
             if histend:
                 end_msg = [{"role": dev_role, "content": histend}]
 
+        # now we inject anything modules want to inject into the user messages
+        for message in messages:
+            if message.get("injection"):
+                if message.get("role") == "user" and message.get("content"):
+                    message["content"] += f"\n\n{message['injection']}"
+
+                # remove the field so that it's clean for the API
+                del message["injection"]
+
         # 2. Build and Trim Context
         # We combine them to check the total token count
         full_context = system_msg + messages + end_msg

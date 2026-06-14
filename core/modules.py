@@ -21,7 +21,7 @@ reported_missing = []
 def _extract_deps_from_file(file_path):
     """extract dependencies list from module file without importing it"""
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding="utf-8") as f:
             tree = ast.parse(f.read())
 
         for node in ast.walk(tree):

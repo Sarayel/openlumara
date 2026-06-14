@@ -298,12 +298,7 @@ class Coder(core.module.Module):
             str(self.config.get("sandbox_folder", default="~/sandbox"))
         ).rstrip(os.path.sep)
 
-        if HAS_TREE_SITTER:
-            if not loaded_languages:
-                core.log("coder", "Tree-sitter installed but NO language parsers found.")
-            else:
-                core.log("coder", f"Tree-sitter ENABLED. Languages: {loaded_languages}")
-        else:
+        if not HAS_TREE_SITTER:
             core.log("coder", f"Tree-sitter DISABLED. Reason: {disabled_reason}")
 
         # Core tools always available

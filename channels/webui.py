@@ -1546,7 +1546,7 @@ class Webui(core.channel.Channel):
         # broadcast the signal that makes the page refresh
 
         # make sure the websocket has time to connect first
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(2)
         await manager.broadcast({"type": "ready"})
 
     def on_log(self, category, message):

@@ -51,8 +51,8 @@ class WebSearch(modules.http.Http):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if not self.config.get("allow_ai_to_search"):
-            self.disabled_tools.extend(["text", "images", "news", "videos", "books"])
+        # if not self.config.get("allow_ai_to_search"):
+        #     self.disabled_tools.extend(["text", "images", "news", "videos", "books"])
 
     # ---------------------------------------------------------
     # Internal Helper Methods

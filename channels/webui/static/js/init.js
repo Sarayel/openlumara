@@ -70,6 +70,9 @@ function handlePromptProgress(prog) {
         return;
     }
 
+    typing.classList.toggle('show', false);
+    typing.style.display = '';
+
     const cache = progressData.cache || 0;
     const processed = progressData.processed - cache;
     const total = progressData.total - cache;
@@ -159,6 +162,7 @@ function handleWebSocketMessage(data) {
         handleUserMessage(data.message);
         console.log(`[DEBUG] Adding new user messsage`);
         console.log(data.message);
+        setInputState(true, false, true);
         return;
     }
     if (data.type === 'user_message_confirmed') {
@@ -169,6 +173,9 @@ function handleWebSocketMessage(data) {
             console.log(`[DEBUG] Confirming user message index: ${data.index}`);
             msgWrapper.classList.remove('sending');
         }
+
+        typing.classList.toggle('show', true);
+
         return;
     }
 
@@ -183,8 +190,6 @@ function handleWebSocketMessage(data) {
         } else if (data.content) {
             tokenContent = data.content;
         }
-
-        console.log(data.message);
 
         if (tokenType === 'token_usage') {
             updateTokenUsage();
@@ -220,8 +225,6 @@ function handleWebSocketMessage(data) {
             actionsRow.appendChild(aiActions);
             actionsRow.appendChild(statsDiv);
             aiWrapper.appendChild(actionsRow);
-
-            chat.insertBefore(aiWrapper, typing);
             
             // FIX: Make the wrapper visible immediately
             aiWrapper.classList.remove('hidden');
@@ -236,11 +239,14 @@ function handleWebSocketMessage(data) {
             isStreaming = true;
             isDataStreaming = true;
 
+            // remove typing indicator
+            typing.classList.toggle('show', false);
+            if (typing) { typing.style.display = ''; }
+
             // Remove progress indicator when first token arrives
             if (fancyProcessingIndicator) {
                 fancyProcessingIndicator.remove();
                 fancyProcessingIndicator = null;
-                if (typing) typing.style.display = '';
             }
         } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
             // Fallback: Insert AI wrapper if it was created but not yet in the DOM

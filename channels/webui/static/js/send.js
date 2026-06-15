@@ -263,15 +263,43 @@ async function send(providedContent = null) {
     const isRegenerate = providedContent !== null;
     const rawContent = providedContent !== null ? providedContent : inputField.value.trim();
     const message = typeof rawContent === 'string' ? rawContent : extractTextContent(rawContent);
-    
-    if (!isRegenerate) {
-        clearInput();
-        if (message.trim().startsWith('/') || message.trim().startsWith("STOP")) {
-            return sendCommand(message);
-        }
-    }
 
     if (isStreaming) return;
+    if (!message && !isRegenerate) return;
+
+    if (!isRegenerate) {
+        clearInput();
+    }
+
+    promptProcessingReceived = false;
+    typewriterQueue = [];
+    displayedContent = '';
+    isTypewriterRunning = false;
+    resetStreamState();
+
+    // Check API status
+    let isConnected = false;
+    try {
+        const statusResponse = await fetch('/api/status', { signal: AbortSignal.timeout(5000) });
+        if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            if (statusData.connected) {
+                isConnected = true;
+            }
+        }
+    } catch (err) {
+        console.error('Could not check API status:', err);
+    }
+
+    if (!isConnected) {
+        const reconnected = await reconnectApi();
+        if (!reconnected) {
+            removePlaceholder();
+            showApiConfigError('API is not connected. Cannot regenerate response.', 'connection_failed');
+            return;
+        }
+        isConnected = true;
+    }
 
     // Build payload
     const hasFiles = window.upload_queue && window.upload_queue.files.length > 0;
@@ -295,11 +323,31 @@ async function send(providedContent = null) {
         payloadBody = { role: "user", content: contentPayload };
     }
 
-    // Set local streaming state so we don't double-send
     isStreaming = true;
     isDataStreaming = true;
+    currentController = new AbortController();
+
+    // Update stop button to show streaming indicator when tokens start
     updateStopButtonState();
+
+    let playedCompletionSound = false;
+
+    // Play send message sound
     TypewriterAudioManager.play('send_message');
+
+    let streamHadError = false;
+    let streamStarted = false;
+
+    const typewriterEnabled = localStorage.getItem("typewriterEnabled") === 'true';
+    const typewriterSpeed = parseInt(localStorage.getItem("typewriterSpeed") ?? "30", 10);
+    const useTypewriter = typewriterEnabled && typewriterSpeed > 0;
+    const useStreamingSound = localStorage.getItem("tokenEnabled") === 'true';
+
+    let progressBarFill = null;
+    let progressTextPercent = null;
+    let progressTextETA = null;
+
+    scrollToBottom();
 
     // Send via WebSocket
     if (window.socket && window.socket.readyState === WebSocket.OPEN) {
@@ -310,6 +358,7 @@ async function send(providedContent = null) {
         }));
     } else {
         console.error('[DEBUG] WebSocket not open.');
+        showApiConfigError("Websocket connection is not ready. Please wait a bit and try again!", 'websocket_not_open');
         isStreaming = false;
         isDataStreaming = false;
         setInputState(false, false, false);
@@ -385,6 +434,36 @@ async function finalizeStreamingUI(aiWrapper, aiMsgDiv) {
 
     // Clear streaming state
     clearStreamingToolCalls();
+
+    isDataStreaming = false;
+    // Update stop button state to show "Skip" if typewriter is still running
+    updateStopButtonState();
+
+    if (window.upload_queue && window.upload_queue.files.length > 0) {
+        window.upload_queue.wrappers.forEach(w => w.remove());
+        window.upload_queue.files = [];
+        window.upload_queue.wrappers = [];
+        window.updateUploadQueueUI();
+    }
+
+    // Update chat info
+    try {
+        const chatResponse = await fetch('/chat/current');
+        const chatData = await chatResponse.json();
+        if (chatData.success && chatData.chat) {
+            currentChatId = chatData.chat.id;
+            updateChatTitleBar(chatData.chat.title, chatData.chat.tags || []);
+        }
+    } catch (e) {
+        console.error("Failed to update chat info", e);
+    }
+
+    // Final safety cleanup for processing indicators
+    if (fancyProcessingIndicator) {
+        fancyProcessingIndicator.remove();
+        fancyProcessingIndicator = null;
+    }
+    typing.style.display = '';
 
     // Reset stream state AFTER UI is finalized
     resetStreamState();

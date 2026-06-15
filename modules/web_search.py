@@ -14,10 +14,10 @@ class WebSearch(modules.http.Http):
     dependencies = ["ddgs"]
 
     settings = {
-        "allow_ai_to_search": {
-            "default": False,
-            "description": "Whether to allow the AI to search the web. When this is off, just use the /search command, which will insert the results into chat history so that your AI can read it."
-        },
+        # "allow_ai_to_search": {
+        #     "default": False,
+        #     "description": "Whether to allow the AI to search the web. When this is off, just use the /search command, which will insert the results into chat history so that your AI can read it."
+        # },
         "max_results": {
             "default": 5,
             "description": "The maximum number of results to return for search queries."
@@ -207,24 +207,24 @@ class WebSearch(modules.http.Http):
 
         return ()
 
-    # command version of search
-    @core.module.command("search", help={
-        "text <query>": "search the web for text",
-        "images <query>": "search the web for images",
-        "news <query>": "search the web for news",
-        "videos <query>": "search the web for videos",
-        "books <query>": "search the web for books"
-    }, send_to_ai=True)
-    async def cmd_search(self, args: list):
-        kind = args[0]
-        if kind not in ("text", "images", "news", "videos", "books"):
-            return "invalid search type. try one of the supported types (text, images, news, videos, or books)"
-
-        query = " ".join(args[1:])
-        url_key = "href" if kind == "text" else "url"
-
-        result = await self._search(kind, query, url_key, self._get_fields(kind))
-        return result
+    # # command version of search
+    # @core.module.command("search", help={
+    #     "text <query>": "search the web for text",
+    #     "images <query>": "search the web for images",
+    #     "news <query>": "search the web for news",
+    #     "videos <query>": "search the web for videos",
+    #     "books <query>": "search the web for books"
+    # }, send_to_ai=True)
+    # async def cmd_search(self, args: list):
+    #     kind = args[0]
+    #     if kind not in ("text", "images", "news", "videos", "books"):
+    #         return "invalid search type. try one of the supported types (text, images, news, videos, or books)"
+    #
+    #     query = " ".join(args[1:])
+    #     url_key = "href" if kind == "text" else "url"
+    #
+    #     result = await self._search(kind, query, url_key, self._get_fields(kind))
+    #     return result
 
     # ---------------------------------------------------------
     # AI Tools

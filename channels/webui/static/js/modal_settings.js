@@ -2267,6 +2267,9 @@ async function restartServer() {
             restartMsg.textContent = 'Restarting server...';
         }
 
+        toggleModal('settings');
+        toggleModal('log');
+
         const response = await fetch('/server/restart', {
             method: 'POST',
             signal: AbortSignal.timeout(5000)
@@ -2274,13 +2277,8 @@ async function restartServer() {
             // Server might disconnect during restart, which is expected
             return { ok: true };
         });
-
-        // Show restart notification
-        showRestartNotification();
-
     } catch (err) {
-        // Expected - server is restarting
-        showRestartNotification();
+        pass
     }
 }
 
@@ -2326,36 +2324,6 @@ function showRestartNotification() {
     pollForServerRestart();
 }
 
-// Poll for server to come back up
-function pollForServerRestart() {
-    let attempts = 0;
-    const maxAttempts = 60; // 30 seconds max
-
-    const poll = setInterval(async () => {
-        attempts++;
-
-        if (attempts >= maxAttempts) {
-            clearInterval(poll);
-            showRestartFailed();
-            return;
-        }
-
-        try {
-            const response = await fetch('/settings/load', {
-                method: 'GET',
-                signal: AbortSignal.timeout(1000)
-            });
-
-            if (response.ok) {
-                clearInterval(poll);
-                showRestartComplete();
-            }
-        } catch (err) {
-            // Server not ready yet, keep polling
-        }
-    }, 500);
-}
-
 // Show restart failed message
 function showRestartFailed() {
     const notification = document.querySelector('.restart-notification');
@@ -2373,28 +2341,6 @@ function showRestartFailed() {
         </div>
         `;
     }
-}
-
-// Show restart complete and refresh page
-function showRestartComplete() {
-    const notification = document.querySelector('.restart-notification');
-    if (notification) {
-        notification.classList.add('restart-complete');
-        notification.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        <div class="restart-content">
-        <div class="restart-title">Server Restarted</div>
-        <div class="restart-desc">Refreshing page...</div>
-        </div>
-        `;
-    }
-
-    // Refresh the page after a short delay
-    setTimeout(() => {
-        window.location.reload();
-    }, 500);
 }
 
 // Show success message (theme only - no restart)

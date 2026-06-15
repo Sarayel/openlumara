@@ -17,9 +17,12 @@ reported_missing = []
 reported_broken = []
 
 # buffer the warnings and errors so that we can propagate them to manager.log()
-error_buffer = []
+log_buffer = []
 def log(category, message):
-    error_buffer.append((category, message))
+    if core.manager.global_instance:
+        core.manager.global_instance.log(category, message)
+    else:
+        log_buffer.append((category, message))
 
 # --------------------------------------
 # dependency auto-installer/uninstaller
@@ -45,11 +48,11 @@ def _extract_deps_from_file(file_path):
         log("core", f"could not parse dependencies from {file_path}: {e}")
     return []
 
-def _install_deps(module_name, packages):
+def _install_deps(module_name, packages, manager):
     """install pip packages"""
     if not packages:
         return
-    log(module_name, f"installing dependencies: {', '.join(packages)}")
+    manager.log(module_name, f"installing dependencies: {', '.join(packages)}")
 
     try:
         subprocess.check_call(
@@ -58,13 +61,13 @@ def _install_deps(module_name, packages):
             stderr=subprocess.DEVNULL
         )
     except subprocess.CalledProcessError as e:
-        log(module_name, f"dependency install failed: {core.detail_error(e)}")
+        manager.log(module_name, f"dependency install failed: {core.detail_error(e)}")
 
 def _uninstall_deps(module_name, packages):
     """uninstall pip packages"""
     if not packages:
         return
-    log(module_name, f"uninstalling dependencies: {', '.join(packages)}")
+    manager.log(module_name, f"uninstalling dependencies: {', '.join(packages)}")
 
     try:
         subprocess.check_call(
@@ -73,7 +76,7 @@ def _uninstall_deps(module_name, packages):
             stderr=subprocess.DEVNULL
         )
     except subprocess.CalledProcessError as e:
-        log(module_name, f"dependency uninstall failed: {core.detail_error(e)}")
+        manager.log(module_name, f"dependency uninstall failed: {core.detail_error(e)}")
 
 def _get_module_file_path(package, module_name):
     """get the file path for a module without importing it"""
@@ -96,7 +99,7 @@ def _check_missing_deps(deps):
             missing.append(dep)
     return missing
 
-async def install_module_deps(package, module_name):
+async def install_module_deps(package, module_name, manager):
     """install dependencies for a module if missing"""
     file_path = _get_module_file_path(package, module_name)
     if not file_path:
@@ -108,7 +111,7 @@ async def install_module_deps(package, module_name):
 
     missing = _check_missing_deps(deps)
     if missing:
-        _install_deps(module_name, missing)
+        _install_deps(module_name, missing, manager)
         return True
 
     return False
@@ -166,7 +169,7 @@ async def uninstall_module_deps(package, module_name, manager):
             if hasattr(instance, 'on_uninstall'):
                 await instance.on_uninstall()
 
-        _uninstall_deps(module_name, installed)
+        _uninstall_deps(module_name, installed, manager)
         return True
 
 # --------------------------

@@ -185,3 +185,79 @@
     width: 50%;
     height: 650px;
 }
+
+/* ==========================================================================
+ *  Log Modal
+ *  ========================================================================== */
+
+.log-modal {
+    width: 70%;
+    height: 70vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.log-content {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+.log-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    flex-shrink: 0;
+}
+
+.log-toolbar button {
+    padding: 6px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+}
+
+.log-toolbar button:hover {
+    background: var(--bg-secondary);
+}
+
+.log-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 24px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    background: var(--bg-primary);
+    min-height: 0;
+}
+
+.log-entry {
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-timestamp {
+    color: var(--text-secondary);
+}
+
+.log-category {
+    color: #8b5cf6;
+    font-weight: 600;
+}
+
+.log-message {
+    color: var(--text-primary);
+}

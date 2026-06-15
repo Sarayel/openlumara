@@ -81,7 +81,7 @@ class Module:
 
     # alias for self.manager.log()
     def log(self, category: str, message: str):
-        return self.manager.log(category, message)
+        self.manager.log(category, message)
 
     async def _check(self):
         pass

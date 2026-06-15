@@ -89,11 +89,20 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self.connection_users: Dict[WebSocket, str] = {}  # Track authenticated users
+        self.log_buffer: List[dict] = []  # Store all log messages
+        self.max_log_buffer = 1000  # Keep last 1000 logs
 
     async def connect(self, websocket: WebSocket, user: str = "anonymous"):
         await websocket.accept()
         self.active_connections.append(websocket)
         self.connection_users[websocket] = user
+        
+        # Send log history to new connection
+        if self.log_buffer:
+            await websocket.send_json({
+                "type": "log_history",
+                "logs": self.log_buffer
+            })
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
@@ -107,6 +116,16 @@ class ConnectionManager:
                     await connection.send_json(message)
             except Exception:
                 pass
+
+    def add_log(self, category: str, message: str):
+        """Add a log entry to the buffer"""
+        self.log_buffer.append({
+            "category": category,
+            "message": message
+        })
+        # Keep only the last N entries
+        if len(self.log_buffer) > self.max_log_buffer:
+            self.log_buffer = self.log_buffer[-self.max_log_buffer:]
 
 manager = ConnectionManager()
 
@@ -1519,9 +1538,30 @@ class Webui(core.channel.Channel):
         self.server.should_exit = True
         await asyncio.sleep(1) # Allow grace period
 
+    async def on_ready(self):
+        print(flush=True)
+        print(f"Please open the WebUI at {self.url}", flush=True)
+
+        # broadcast the signal that makes the page refresh
+        await manager.broadcast({"type": "ready", "content": "ready"})
+
     def on_log(self, category, message):
-        # implement websocket send here!
-        pass
+        # Store log in buffer for history
+        manager.add_log(category, message)
+        
+        # Broadcast log messages to all connected webui clients
+        # Since on_log is sync but manager.broadcast is async, we schedule it as a task
+        log_message = {
+            "type": "log",
+            "category": category,
+            "message": message
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast(log_message))
+        except RuntimeError:
+            # No event loop running - create one for this task
+            asyncio.ensure_future(manager.broadcast(log_message))
 
     async def on_push(self, message: dict):
         """Triggered when a message is pushed (announcements, etc)"""

@@ -685,6 +685,13 @@ class Channel:
                 char_counter += len(content)
                 yield text_to_token(content)
 
+    async def on_ready(self):
+        """
+        called when the entire framework has fully initialized
+        (when the message "[CORE] Startup complete" shows up)
+        """
+        pass
+
     async def on_push(self, message: dict):
         raise NotImplementedError
 

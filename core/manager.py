@@ -45,6 +45,13 @@ class Manager:
         for name, channel in self.channels.items():
             channel.log_error(message, e)
 
+    def _drain_log_buffers(self):
+        if core.modules.log_buffer:
+            for category, message in core.modules.log_buffer:
+                self.log(category, message)
+            # clear it so we can re-run this to get more from the buffer
+            core.modules.log_buffer.clear()
+
     async def run(self):
         """main loop"""
 
@@ -130,6 +137,13 @@ class Manager:
             if last_channel and last_channel in self.channels.keys():
                 self.channel = self.channels[last_channel]
 
+        # display any error messages that were emitted
+        # by the framework before the manager was initialized
+        self._drain_log_buffers()
+
+        # make our instance accessible even without a reference
+        global_instance = self
+
         if enabled_modules:
             self.log("core", "Loading core modules")
 
@@ -137,7 +151,7 @@ class Manager:
             newly_installed_modules = []
             if not self.args.disable_auto_installer:
                 for mod_name in enabled_modules:
-                    installed = await core.modules.install_module_deps(modules, mod_name)
+                    installed = await core.modules.install_module_deps(modules, mod_name, manager)
                     if installed:
                         newly_installed_modules.append(mod_name)
 
@@ -168,7 +182,7 @@ class Manager:
             newly_installed_user_modules = []
             if not self.args.disable_auto_installer:
                 for mod_name in enabled_user_modules:
-                    installed = await core.modules.install_module_deps(user_modules, mod_name)
+                    installed = await core.modules.install_module_deps(user_modules, mod_name, manager)
 
                     if installed:
                         newly_installed_user_modules.append(mod_name)
@@ -228,25 +242,13 @@ class Manager:
             tool_name = tool.get("function").get("name")
             self.tool_names.append(tool_name)
 
-        # display any error messages that were emitted
-        # by the framework before the manager was initialized
-        if core.modules.error_buffer:
-            for category, message in core.modules.error_buffer:
-                self.log(category, message)
-
         # Attempt API connection but don't fail if it doesn't work
         await self._initialize_api_connection()
 
         # run everything
         self.log("core", "Startup complete")
-
-        if "webui" in self.channels:
-            webui_url = self.channels["webui"].url
-            print(flush=True)
-            print(f"Please open the WebUI at {webui_url}", flush=True)
-
-        # make our instance accessible even without a reference
-        global_instance = self
+        for name, channel in self.channels.items():
+            await channel.on_ready()
 
         try:
             await asyncio.gather(*self._async_tasks, return_exceptions=should_swallow_exceptions)

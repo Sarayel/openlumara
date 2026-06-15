@@ -3,8 +3,6 @@
 // =============================================================================
 
 let wsSocket = null;
-let wsReconnectAttempts = 0;
-const maxWsReconnectAttempts = 50;
 
 function connectWebSocket() {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -57,13 +55,8 @@ function connectWebSocket() {
 }
 
 function scheduleWsReconnect() {
-    if (wsReconnectAttempts >= maxWsReconnectAttempts) {
-        console.error('Max WebSocket reconnection attempts reached');
-        return;
-    }
-    wsReconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(1.5, wsReconnectAttempts - 1), 30000);
-    console.log(`WS reconnect attempt ${wsReconnectAttempts} in ${Math.round(delay)}ms`);
+    const delay = 100;
+    console.log(`attempting to reconnect to websocket..`);
     setTimeout(connectWebSocket, delay);
 }
 
@@ -85,6 +78,18 @@ function handleWebSocketMessage(data) {
             updateConnectionStatus(data.status);
         }
         return;
+    }
+    if (data.type === 'log') {
+        handleLogMessage(data);
+        return;
+    }
+    if (data.type === 'log_history') {
+        handleLogHistory(data.logs);
+        return;
+    }
+    if (data.type === 'ready') {
+        // refresh the page
+        window.location.reload();
     }
     // Legacy: handle raw message objects (for backwards compatibility)
     // Add an index if missing to ensure proper handling
@@ -194,6 +199,68 @@ async function init() {
     } catch (err) {
         console.error('Failed to initialize UI and polling:', err);
     }
+}
+
+// =============================================================================
+// Log Modal Functions
+// =============================================================================
+
+let logAutoScroll = true;
+
+function handleLogMessage(data) {
+    const logContent = document.getElementById('log-log-content');
+    if (!logContent) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> <span class="log-category">[${data.category.toUpperCase()}]</span> <span class="log-message">${escapeHtml(data.message)}</span>`;
+
+    logContent.appendChild(entry);
+
+    if (logAutoScroll) {
+        const logContainer = document.getElementById('log-log-container');
+        if (logContainer) {
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+    }
+}
+
+function handleLogHistory(logs) {
+    const logContent = document.getElementById('log-log-content');
+    if (!logContent) return;
+
+    // Clear existing logs
+    logContent.innerHTML = '';
+
+    // Add all historical logs
+    for (const log of logs) {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = `<span class="log-timestamp">[${new Date().toLocaleTimeString()}]</span> <span class="log-category">[${log.category.toUpperCase()}]</span> <span class="log-message">${escapeHtml(log.message)}</span>`;
+        logContent.appendChild(entry);
+    }
+}
+
+function clearLog() {
+    const logContent = document.getElementById('log-log-content');
+    if (logContent) {
+        logContent.innerHTML = '';
+    }
+}
+
+function toggleLogAutoScroll() {
+    logAutoScroll = !logAutoScroll;
+    const btn = document.getElementById('log-autoscroll-btn');
+    if (btn) {
+        btn.textContent = `Auto-scroll: ${logAutoScroll ? 'ON' : 'OFF'}`;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 init();

@@ -205,30 +205,6 @@
     overflow: hidden;
 }
 
-.log-toolbar {
-    display: flex;
-    gap: 8px;
-    padding: 12px 24px;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-    flex-shrink: 0;
-}
-
-.log-toolbar button {
-    padding: 6px 12px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-    cursor: pointer;
-    font-size: 0.85rem;
-    transition: all 0.2s ease;
-}
-
-.log-toolbar button:hover {
-    background: var(--bg-secondary);
-}
-
 .log-container {
     flex: 1;
     overflow-y: auto;
@@ -249,7 +225,7 @@
 }
 
 .log-category {
-    color: #8b5cf6;
+    color: var(--accent);
     font-weight: 600;
 }
 

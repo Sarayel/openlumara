@@ -128,6 +128,8 @@ function processToken(msg, isSimulated = false) {
     const type = msg.type || 'content';
     const content = msg.content || '';
 
+    console.log(msg);
+
     // show ongoing prompt processing progress
     if (type === 'prompt_progress') {
         handlePromptProgress(content);
@@ -144,6 +146,9 @@ function processToken(msg, isSimulated = false) {
     // 1. Handle Reasoning
     if (type === 'reasoning' && content) {
         clearProcessingIndicators();
+        if (fancyProcessingIndicator) {
+            fancyProcessingIndicator.remove();
+        }
         appendStreamText(type, content, false);
         renderStreamSegments(window._currentAiMsgDiv);
         if (!isSimulated && window._currentUseStreamingSound) {
@@ -156,6 +161,9 @@ function processToken(msg, isSimulated = false) {
     // 2. Handle Content
     if (type === 'content' && content) {
         clearProcessingIndicators();
+        if (fancyProcessingIndicator) {
+            fancyProcessingIndicator.remove();
+        }
         appendStreamText(type, content, window._currentUseTypewriter);
 
         if (window._currentUseTypewriter) {
@@ -220,6 +228,9 @@ function handleWebSocketMessage(data) {
             catchingUpFromBuffer = true;
             loadChat(data.active_chat_id, catchingUpFromBuffer);
             createAiWrapper();
+            isStreaming = true;
+            isDataStreaming = true;
+            setInputState(true, false, true);
             data.buffer.forEach(token => processToken(token, true));
             clearProcessingIndicators();
         } else {
@@ -271,7 +282,7 @@ function handleWebSocketMessage(data) {
     if (data.type === 'token') {
         if (!isStreaming) {
             // keep input field blocked until the stream is done
-            setInputState(true, false, true);
+            setInputState(true, true, true);
             isStreaming = true;
             isDataStreaming = true;
         }

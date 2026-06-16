@@ -300,6 +300,11 @@ async function finalizeStreamingUI(aiWrapper, aiMsgDiv) {
     // Reset stream state AFTER UI is finalized
     resetStreamState();
 
+    // prevents duplicate sounds when typewriter is enabled
+    if (!typewriterEnabled) {
+        TypewriterAudioManager.play('completion');
+    }
+
     setInputState(false, false, false);
     isStreaming = false;
     streamFrozen = false;

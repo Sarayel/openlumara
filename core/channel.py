@@ -30,6 +30,11 @@ class Channel:
 
         self.tc_manager = core.toolcalls.ToolcallManager(self)
 
+        # used to track whether to preserve reasoning
+        # for only the current "agentic turn"
+        # (so that reasoning from older toolcalls can be discarded)
+        self.agentic_loop_start: int = -1
+
         # load channel config
         self.config = core.config.ConfigManager(core.config.config, ["channels", "settings", self.name])
 

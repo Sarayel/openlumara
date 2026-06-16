@@ -289,6 +289,8 @@ class ToolcallManager:
                         final_msg["reasoning_content"] = final_reasoning_str
 
                     await self.channel.context.chat.add(final_msg)
+                    self.channel.agentic_loop_start = len(await self.channel.context.chat.get())-1
+
                     if push:
                         await self.channel.push(final_msg)
 

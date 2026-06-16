@@ -36,6 +36,7 @@ default_config = {
         "temperature": 0.7,
         "enable_thinking": True,
         "keep_reasoning_in_context": True,
+        "only_preserve_reasoning_for_current_agentic_loop": True,
         "reasoning_effort": None,
         "use_tools": True
     },

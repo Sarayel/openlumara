@@ -347,22 +347,6 @@ class Chat:
         # make a copy so we don't modify the original reference
         new_message = message.copy()
 
-        # ensure message does not exceed token limits
-        max_tokens = int(core.config.get("api").get("max_context", 8192))
-        
-        # create a potential new message list to check token count
-        current_messages = self.data[self.current].get("messages", [])
-        potential_messages = list(current_messages)
-
-        potential_messages.append(new_message)
-        
-        # calculate tokens for this potential list
-        new_token_count = await self.count_tokens(messages=potential_messages)
-
-        if new_token_count > max_tokens:
-            await self.channel.push(f"Your request exceeds the token limit! It was {new_token_count} out of {max_tokens} tokens.")
-            return False
-
         if not self.data[self.current]["title"].strip():
             # auto-set title
             msg_content = self.channel._extract_content(new_message)

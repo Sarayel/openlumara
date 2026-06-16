@@ -6,6 +6,12 @@ let promptProgress = null;
 let totalPromptTokens = 0;
 let totalGenTokens = 0;
 
+// typewriter tracking
+const typewriterEnabled = localStorage.getItem("typewriterEnabled") === 'true';
+const typewriterSpeed = parseInt(localStorage.getItem("typewriterSpeed") ?? "30", 10);
+const useTypewriter = typewriterEnabled && typewriterSpeed > 0;
+const useStreamingSound = localStorage.getItem("tokenEnabled") === 'true';
+
 // =============================================================================
 // Main Send Function
 // =============================================================================
@@ -94,11 +100,6 @@ async function send(providedContent = null) {
 
     let streamHadError = false;
     let streamStarted = false;
-
-    const typewriterEnabled = localStorage.getItem("typewriterEnabled") === 'true';
-    const typewriterSpeed = parseInt(localStorage.getItem("typewriterSpeed") ?? "30", 10);
-    const useTypewriter = typewriterEnabled && typewriterSpeed > 0;
-    const useStreamingSound = localStorage.getItem("tokenEnabled") === 'true';
 
     let progressBarFill = null;
     let progressTextPercent = null;

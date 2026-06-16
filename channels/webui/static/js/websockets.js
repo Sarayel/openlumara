@@ -3,6 +3,7 @@ let fancyProcessingIndicatorCreated = false;
 let catchingUpFromBuffer = false;
 
 let sending_status = null;
+let wsReconnecting = false;
 
 function connectWebSocket() {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -18,7 +19,6 @@ function connectWebSocket() {
         wsSocket = new WebSocket(wsUrl);
         window.socket = wsSocket;  // Keep global reference for send.js
     } catch (e) {
-        console.error('Failed to create WebSocket:', e);
         scheduleWsReconnect();
         return;
     }
@@ -26,6 +26,7 @@ function connectWebSocket() {
     wsSocket.onopen = () => {
         console.log('WebSocket connected');
         isWsConnected = true;
+        wsReconnecting = false;
         updateConnectionStatus('connected');
     };
 
@@ -39,22 +40,29 @@ function connectWebSocket() {
     };
 
     wsSocket.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason);
-        wsSocket = null;
-        window.socket = null;
-        isWsConnected = false;
-        updateConnectionStatus('disconnected');
+        if (!wsReconnecting) {
+            console.log('WebSocket disconnected:', event.code, event.reason);
+            wsSocket = null;
+            window.socket = null;
+            isWsConnected = false;
+            updateConnectionStatus('disconnected');
+        }
         scheduleWsReconnect();
     };
 
     wsSocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        if (!wsReconnecting) {
+            console.error('WebSocket error:', error);
+        }
     };
 }
 
 function scheduleWsReconnect() {
     console.log(`attempting to reconnect to websocket..`);
-    connectWebSocket();
+    wsReconnecting = true;
+    setTimeout(function () {
+        connectWebSocket();
+    }, 1000);
 }
 
 function handlePromptProgress(prog) {
@@ -67,9 +75,6 @@ function handlePromptProgress(prog) {
         return;
     }
 
-    typing.classList.toggle('show', false);
-    typing.style.display = '';
-
     const cache = progressData.cache || 0;
     const processed = progressData.processed - cache;
     const total = progressData.total - cache;
@@ -79,6 +84,9 @@ function handlePromptProgress(prog) {
 
     // 1. create indicator
     if (!fancyProcessingIndicatorCreated) {
+        // hide typing indicator
+        setInputState(true, false, true);
+
         fancyProcessingIndicator = document.createElement('div');
         fancyProcessingIndicator.className = 'prompt-processing-indicator-wrapper tool-processing-content';
 
@@ -128,19 +136,21 @@ function processToken(msg, isSimulated = false) {
     const type = msg.type || 'content';
     const content = msg.content || '';
 
-    console.log(msg);
-
     // show ongoing prompt processing progress
     if (type === 'prompt_progress') {
         handlePromptProgress(content);
         return;
-    } else {
-        // create the ai message wrapper
-        if (!window._currentAiMsgDiv) {
-            createAiWrapper();
-        } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
-            chat.insertBefore(window._currentAiWrapper, typing);
-        }
+    }
+
+    if (type === 'token_usage') {
+        updateTokenUsage(content);
+        return;
+    }
+
+    if (!window._currentAiMsgDiv) {
+        createAiWrapper();
+    } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
+        chat.insertBefore(window._currentAiWrapper, typing);
     }
 
     // 1. Handle Reasoning
@@ -222,6 +232,8 @@ function processToken(msg, isSimulated = false) {
 }
 
 function handleWebSocketMessage(data) {
+    console.log(data);
+
     // Handle typed messages from backend
     if (data.type === 'sync_state') {
         if (data.buffer.length > 0) {
@@ -275,7 +287,9 @@ function handleWebSocketMessage(data) {
             msgWrapper.classList.remove('user-placeholder');
             msgWrapper.querySelector('.message').removeChild(sending_status);
         }
-        typing.classList.toggle('show', true);
+
+        // show typing indicator
+        setInputState(true, true, true);
         return;
     }
 
@@ -285,6 +299,13 @@ function handleWebSocketMessage(data) {
             setInputState(true, true, true);
             isStreaming = true;
             isDataStreaming = true;
+
+            // create the ai message wrapper
+            if (!window._currentAiMsgDiv) {
+                createAiWrapper();
+            } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
+                chat.insertBefore(window._currentAiWrapper, typing);
+            }
         }
 
         // Extract token type and content correctly
@@ -296,12 +317,6 @@ function handleWebSocketMessage(data) {
         } else if (data.content) {
             msgPayload = { type: 'content', content: data.content };
             tokenType = 'content';
-        }
-
-        // Metadata/Control tokens
-        if (tokenType === 'token_usage') {
-            updateTokenUsage(msgPayload);
-            return;
         }
 
         processToken(msgPayload, false);

@@ -96,6 +96,9 @@ class ConnectionManager:
         self.stream_buffer: List[str] = []  # Accumulates tokens for the current stream
         self.active_stream_task: Optional[asyncio.Task] = None
 
+        # toggled on when the webui channel has fully started up
+        self.webui_ready = False
+
     async def connect(self, websocket: WebSocket, user: str = "anonymous"):
         await websocket.accept()
         self.active_connections.append(websocket)
@@ -118,10 +121,19 @@ class ConnectionManager:
                 "buffer": self.stream_buffer
             })
 
+        # wait with sending the ready signal until the webui is fully started up
+        while not self.webui_ready:
+            await asyncio.sleep(0.1)
+
+        await self.broadcast({"type": "ready"})
+
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
         self.connection_users.pop(websocket, None)
+
+    def send_ready_signal(self):
+        self.webui_ready = True
 
     async def broadcast(self, message: dict):
         disconnected = []
@@ -279,9 +291,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Signal the API to stop
                     if channel_instance:
                         await channel_instance.manager.API.cancel()
-                        await manager.broadcast({
-                            "type": "stream_complete"
-                        })
 
                 elif msg_type == "cancel":
                     stream_id = data.get("id")
@@ -1735,11 +1744,8 @@ class Webui(core.channel.Channel):
         print(flush=True)
         print(f"Please open the WebUI at {self.url}", flush=True)
 
-        # broadcast the signal that makes the page refresh
-
-        # make sure the websocket has time to connect first
-        await asyncio.sleep(1)
-        await manager.broadcast({"type": "ready"})
+        # broadcast the signal that makes the page unlock and reconnect
+        manager.send_ready_signal()
 
     def on_log(self, category, message):
         # Store log in buffer for history

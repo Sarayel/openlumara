@@ -2,6 +2,8 @@ let wsSocket = null;
 let fancyProcessingIndicatorCreated = false;
 let catchingUpFromBuffer = false;
 
+let sending_status = null;
+
 function connectWebSocket() {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = window.apiToken || '';
@@ -235,14 +237,32 @@ function handleWebSocketMessage(data) {
     }
 
     if (data.type === 'user_message_added') {
-        handleNewMessage(data.message);
+        msgEl = handleNewMessage(data.message);
+        msgEl.classList.add('user-placeholder');
+
+        // show the message as a "placeholder" (sent to backend but not sent to API yet)
+        sending_status = document.createElement('span');
+        sending_status.className = 'placeholder-status';
+        sending_status.textContent = 'Sending...';
+        msgEl.querySelector('.message').appendChild(sending_status);
+
+        // clean up the upload queue
+        if (window.upload_queue) {
+            window.upload_queue.wrappers.forEach(w => w.remove());
+            window.upload_queue.files = [];
+            window.upload_queue.wrappers = [];
+            window.updateUploadQueueUI();
+        }
+
         return;
     }
 
     if (data.type === 'user_message_confirmed') {
+        // remove the placeholder styling from the user message
         const msgWrapper = chat.querySelector(`[data-index="${data.index}"]`);
         if (msgWrapper) {
-            msgWrapper.classList.remove('sending');
+            msgWrapper.classList.remove('user-placeholder');
+            msgWrapper.querySelector('.message').removeChild(sending_status);
         }
         typing.classList.toggle('show', true);
         return;
@@ -254,14 +274,6 @@ function handleWebSocketMessage(data) {
             setInputState(true, false, true);
             isStreaming = true;
             isDataStreaming = true;
-        }
-
-        // Cleanup upload queue
-        if (window.upload_queue) {
-            window.upload_queue.wrappers.forEach(w => w.remove());
-            window.upload_queue.files = [];
-            window.upload_queue.wrappers = [];
-            window.updateUploadQueueUI();
         }
 
         // Extract token type and content correctly
@@ -369,8 +381,10 @@ function handleNewMessage(msg) {
     if (!msg || msg.index === undefined) return;
     if (msg.index < lastMessageIndex) return;
 
-    renderSingleMessage(msg, msg.index, true);
+    msgEl = renderSingleMessage(msg, msg.index, true);
     lastMessageIndex = msg.index + 1;
     scrollToBottom();
     updateTokenUsage();
+
+    return msgEl;
 }

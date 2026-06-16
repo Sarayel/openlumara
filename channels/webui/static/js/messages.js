@@ -321,6 +321,8 @@ function renderSingleMessage(msg, index, animate) {
     }
 
     chat.insertBefore(wrapper, typing);
+
+    return wrapper
 }
 
 /**

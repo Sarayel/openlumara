@@ -215,8 +215,45 @@ class APIClient():
             # request token usage from the API
             req["stream_options"] = {"include_usage": True}
 
-        # if core.debug:
-        #     self.manager.log("debug:request", str(req))
+        if core.debug:
+            message_summary = []
+            api_config = core.config.get("api", {})
+
+            for message in context:
+                summary = {
+                    "role": message.get("role")
+                }
+
+                content = message.get("content")
+                if isinstance(content, str):
+                    summary["content_chars"] = len(content)
+                elif isinstance(content, list):
+                    summary["content_items"] = len(content)
+
+                if message.get("tool_calls"):
+                    summary["tool_calls"] = len(message.get("tool_calls") or [])
+
+                message_summary.append(summary)
+
+            tool_count = len(tools or [])
+            custom_field_keys = sorted(list(custom_fields.keys())) if isinstance(custom_fields, dict) else []
+
+            self.manager.log(
+                "debug:request",
+                json.dumps({
+                    "base_url": api_config.get("url"),
+                    "model": self._model,
+                    "stream": stream,
+                    "use_thinking": use_thinking,
+                    "message_count": len(context),
+                    "tool_count": tool_count,
+                    "max_completion_tokens": req.get("max_completion_tokens"),
+                    "temperature": req.get("temperature"),
+                    "reasoning_effort": req.get("reasoning_effort"),
+                    "custom_field_keys": custom_field_keys,
+                    "messages": message_summary,
+                }, ensure_ascii=True, sort_keys=True)
+            )
 
         try:
             # check for cancellation before starting the request
@@ -248,8 +285,6 @@ class APIClient():
             else:
                 # It's a different kind of 400 error (e.g., invalid parameters)
                 self.manager.log_error("Bad request (400)", e)
-                if core.debug:
-                    self.manager.log("request debug", json.dumps(req, indent=2))
                 return {"error": "api_error", **self._get_user_friendly_message("api_error", e)}
 
         except asyncio.CancelledError:
@@ -285,9 +320,10 @@ class APIClient():
         except Exception as e:
             self.manager.log_error("error while sending request to AI", e)
             self.connected = False
-            if core.debug:
-                self.manager.log("request debug", json.dumps(req, indent=2))
             return {"error": "unknown", **self._get_user_friendly_message("unknown", e)}
+
+        if core.debug:
+            self.manager.log("debug:response", str(response))
 
         return response
 
@@ -334,6 +370,8 @@ class APIClient():
                 if self.cancel_request:
                     # cancel the entire stream
                     break
+
+                self.manager.log("debug:stream", json.dumps(token, ensure_ascii=True))
 
                 # let the channel calling send_stream() handle token processing
                 yield token

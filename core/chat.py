@@ -479,6 +479,28 @@ class Chat:
             if "reasoning_content" in message and isinstance(message["reasoning_content"], str):
                 num_tokens += self._count_text_tokens(message["reasoning_content"])
 
+            # Count tool calls if present (in assistant messages)
+            if "tool_calls" in message and isinstance(message["tool_calls"], list):
+                for tool_call in message["tool_calls"]:
+                    if isinstance(tool_call, dict):
+                        # Count the call ID
+                        if "id" in tool_call and isinstance(tool_call["id"], str):
+                            num_tokens += self._count_text_tokens(tool_call["id"])
+                        # Count the type
+                        if "type" in tool_call and isinstance(tool_call["type"], str):
+                            num_tokens += self._count_text_tokens(tool_call["type"])
+                        # Count the function name and arguments
+                        if "function" in tool_call and isinstance(tool_call["function"], dict):
+                            function = tool_call["function"]
+                            if "name" in function and isinstance(function["name"], str):
+                                num_tokens += self._count_text_tokens(function["name"])
+                            if "arguments" in function and isinstance(function["arguments"], str):
+                                num_tokens += self._count_text_tokens(function["arguments"])
+
+            # Count tool_call_id if present (in tool result messages)
+            if "tool_call_id" in message and isinstance(message["tool_call_id"], str):
+                num_tokens += self._count_text_tokens(message["tool_call_id"])
+
         # Add 1 token for final assistant priming (conservative)
         num_tokens += 1
 

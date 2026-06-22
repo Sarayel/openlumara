@@ -2,6 +2,7 @@ import os
 
 quiet = False
 debug = False
+debug_stream = False
 
 from core.functions import *
 import core.exceptions

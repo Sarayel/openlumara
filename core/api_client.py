@@ -371,7 +371,8 @@ class APIClient():
                     # cancel the entire stream
                     break
 
-                self.manager.log("debug:stream", json.dumps(token, ensure_ascii=True))
+                if core.debug:
+                    self.manager.log("debug:stream", json.dumps(token, ensure_ascii=True))
 
                 # let the channel calling send_stream() handle token processing
                 yield token

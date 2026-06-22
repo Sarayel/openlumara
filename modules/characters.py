@@ -126,19 +126,25 @@ class Characters(core.module.Module):
             return None
 
         char_profile = self._replace_tags(char_name, char.get("description", ""))
-        user_name = self.user_profile.get("name", "User")
-
         # all of this is stored as json strings, so newlines need to be restored
         char_profile = char_profile.replace("\\n", "\n")
 
         character_text_build = []
 
-        character_text_build.append(f"## Name\n{char_name}")
-        character_text_build.append(f"## Identity\n{char_profile}")
+        character_text_build.append("## You")
+        character_text_build.append(f"### Name\n{char_name}")
+        character_text_build.append(f"### Identity\n{char_profile}")
 
         scenario = char.get('scenario')
         if scenario:
-            character_text_build.append(f"## Scenario\n{scenario}")
+            scenario = self._replace_tags(char_name, scenario)
+            character_text_build.append(f"### Scenario\n{scenario}")
+
+        user_profile = self.user_profile.get("profile")
+        if user_profile:
+            user_name = self.user_profile.get("name")
+            character_text_build.append(f"## The user: {user_name}")
+            character_text_build.append(user_profile)
 
         char_text = "\n\n".join(character_text_build)
 
@@ -383,10 +389,12 @@ class Characters(core.module.Module):
             return self.result(f"character {name} deleted")
         return self.result("character doesn't exist!", False)
 
-    async def set_user_name(self, name: str):
+    async def set_user_persona(self, name: str, profile: str):
         self.user_profile["name"] = name
+        self.user_profile["profile"] = profile
         self.user_profile.save()
-        return self.result("name set")
+
+        return self.result("user persona set")
 
     async def import_json(self, json_code: str):
         """imports a json character V2 card into your character storage"""

@@ -464,13 +464,15 @@ class Manager:
         active_character = None
         if self.channel:
             active_character = await self.channel.context.chat.get_data("character")
-        if active_character:
-            return None
 
         # automatically insert system prompts returned by modules (such as memory)
         histend_prompt = []
         for module_name, module in self.modules.items():
             if module_name in self.broken_modules:
+                continue
+
+            # if a character is active, use only the character module's endprompt
+            if active_character and module_name != "characters":
                 continue
 
             if prevent_recursion and module_name == "token_threshold":
@@ -490,9 +492,9 @@ class Manager:
 
             if module_sysprompt:
                 sysprompt_header = ' '.join(module_name.split('_')).capitalize()
-                if hasattr(module, "_header") and module._header:
+                if hasattr(module, "header") and module.header:
                     # but allow overriding the header
-                    sysprompt_header = module._header
+                    sysprompt_header = module.header
                 prompt_chunk = f"# {sysprompt_header}\n{str(module_sysprompt).strip()}"
                 histend_prompt.append(prompt_chunk)
 

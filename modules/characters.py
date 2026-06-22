@@ -151,18 +151,20 @@ class Characters(core.module.Module):
 
         return char_text
 
-    # TODO: unfinished - had to go - will finish later
-    # async def on_end_prompt(self):
-    #     curr_char = await self.channel.context.chat.get_data("character")
-    #     char = self._find_character(curr_char)
-    #     if not char:
-    #         print("didnt find char")
-    #         return None
-    #
-    #     print("inserting post history instr")
-    #
-    #     post_hist = char.get("post_history_instructions")
-    #     return post_hist or None
+    async def on_end_prompt(self):
+        curr_char = await self.channel.context.chat.get_data("character")
+        if not curr_char:
+            return None
+
+        char = self._find_character(curr_char)
+        if not char:
+            return None
+
+        char_data = char.get("data")
+        if not char_data:
+            return None
+
+        return char_data.get("post_history_instructions")
 
     async def switch(self, name: str):
         """Switches you to a different character. This will change your personality! Use this if user requests it."""

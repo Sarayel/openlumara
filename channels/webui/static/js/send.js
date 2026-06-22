@@ -15,14 +15,14 @@ async function send(providedContent = null) {
     const rawContent = providedContent !== null ? providedContent : inputField.value.trim();
     const message = typeof rawContent === 'string' ? rawContent : extractTextContent(rawContent);
 
-    // allow bypass for commands (they can be used while streaming is happening)
+    // block sending while a stream is ongoing
+    if (isStreaming) return;
+
+    // send commands using the non-streaming endpoint
     if (message.trim().startsWith('/') || message.trim().startsWith("STOP")) {
         clearInput();
         return sendCommand(message);
     }
-
-    // block sending while a stream is ongoing
-    if (isStreaming) return;
 
     // allow send if typewriter is running but streaming has finished.
     // just skip the typing animations

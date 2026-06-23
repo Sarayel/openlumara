@@ -368,6 +368,11 @@ class Manager:
 
         # re-run the module's setup (on_ready usually contains the config-dependent initialization logic)
         try:
+            await module.on_shutdown()
+        except Exception as e:
+            self.log("core", f"Error running on_shutdown for {module_name}: {core.detail_error(e)}")
+
+        try:
             await module.on_ready()
         except Exception as e:
             self.log("core", f"Error running on_ready for {module_name}: {core.detail_error(e)}")

@@ -70,30 +70,6 @@ class SandboxedShell(core.module.Module):
         }
     }
 
-    async def on_ready(self):
-        self.runtime = None
-        self.container_name = None
-        self.use_gvisor = False
-
-        if shutil.which("podman"):
-            self.runtime = "podman"
-        elif shutil.which("docker"):
-            self.runtime = "docker"
-
-        if not self.runtime:
-            self.log("sandbox_shell", "Neither docker nor podman are available!")
-            return
-
-        self.host_workspace = os.path.expanduser(self.config.get("sandbox_path", default="~/sandbox"))
-        os.makedirs(self.host_workspace, exist_ok=True)
-
-        # Check for gVisor (runsc) availability
-        if shutil.which("runsc"):
-            self.use_gvisor = True
-            self.log("sandbox_shell", "gVisor (runsc) detected. Sandbox will use gVisor for enhanced security.")
-        else:
-            self.log("sandbox_shell", "Warning: gVisor (runsc) not found. Sandbox is running with standard isolation. To install gVisor for better security, see: https://gvisor.dev/docs/user_guide/install/")
-
     async def _kill_process_tree(self, process):
         """Kill a process and all its children (Unix only)."""
         if sys.platform == "win32":
@@ -273,6 +249,29 @@ class SandboxedShell(core.module.Module):
 
     async def on_ready(self):
         """Starts the persistent container when the module is ready."""
+        self.runtime = None
+        self.container_name = None
+        self.use_gvisor = False
+
+        if shutil.which("podman"):
+            self.runtime = "podman"
+        elif shutil.which("docker"):
+            self.runtime = "docker"
+
+        if not self.runtime:
+            self.log("sandbox_shell", "Neither docker nor podman are available!")
+            return
+
+        self.host_workspace = os.path.expanduser(self.config.get("sandbox_path", default="~/sandbox"))
+        os.makedirs(self.host_workspace, exist_ok=True)
+
+        # Check for gVisor (runsc) availability
+        if shutil.which("runsc"):
+            self.use_gvisor = True
+            self.log("sandbox_shell", "gVisor (runsc) detected. Sandbox will use gVisor for enhanced security.")
+        else:
+            self.log("sandbox_shell", "Warning: gVisor (runsc) not found. Sandbox is running with standard isolation. To install gVisor for better security, see: https://gvisor.dev/docs/user_guide/install/")
+
         if not self.runtime:
             return
 

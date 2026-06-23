@@ -145,6 +145,10 @@ class Coder(core.module.Module):
             if callable(attr) and prop_name not in self.enabled_tools:
                 self.disabled_tools.append(prop_name)
 
+    async def on_shutdown(self):
+        self.enabled_tools = []
+        self.disabled_tools = []
+
     def _get_project_path(self, project_name: str) -> str:
         return core.sandbox_path(self.sandbox_path, project_name.strip(os.path.sep))
 

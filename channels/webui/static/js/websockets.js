@@ -1,6 +1,7 @@
 let wsSocket = null;
 let fancyProcessingIndicatorCreated = false;
 let catchingUpFromBuffer = false;
+const BUFFER_BATCH_SIZE = 50; // Tokens per batch
 
 let sending_status = null;
 let wsReconnecting = false;
@@ -278,6 +279,52 @@ function processToken(msg, isSimulated = false) {
         updateStopButtonState();
         return;
     }
+
+    // gee, ai REALLY likes numbered lists huh
+}
+
+// turns out it's really easy to overflow
+// a browser's memory and cause a total crash. oopsies!
+// processing the catchup buffer in batches fixes that
+// ketchup buffer
+// ketchup
+// yummy
+function processBuffer(buffer) {
+    if (!buffer.length) return;
+
+    catchingUpFromBuffer = true;
+
+    function processNextBatch() {
+        let processed = 0;
+
+        while (processed < BUFFER_BATCH_SIZE && buffer.length > 0) {
+            // remove the token from the in-memory buffer
+            // so that the buffer shrinks as we process it
+            const token = buffer.shift();
+            if (!token) break;
+
+            try {
+                // process the token as if we're streaming live
+                // (but we're not, this is a rapid simulation of a token stream that already happened)
+                processToken(token, true);
+                processed++;
+            } catch (error) {
+                console.error('Token processing error:', error);
+            }
+        }
+
+        if (buffer.length > 0) {
+            // use browser's refresh rate to sync everything
+            // and prevent totally freezing/crashing the browser
+            // this is near-instant, yet much more memory-friendly
+            // than doing it all at once
+            requestAnimationFrame(processNextBatch);
+        } else {
+            catchingUpFromBuffer = false;
+        }
+    }
+
+    processNextBatch();
 }
 
 function handleWebSocketMessage(data) {
@@ -290,8 +337,9 @@ function handleWebSocketMessage(data) {
             isStreaming = true;
             isDataStreaming = true;
             setInputState(true, false, true);
-            data.buffer.forEach(token => processToken(token, true));
-            clearProcessingIndicators();
+
+            // process the buffer in batches so that we don't crash the browser
+            processBuffer(data.buffer);
         } else {
             if (data.active_chat_id) {
                 loadChat(data.active_chat_id);
@@ -405,11 +453,36 @@ function handleWebSocketMessage(data) {
         try {
             renderAllMessages(data.messages, false);
 
-            // get last ai wrapper by finding the last ai message
-            const lastAiMsg = data.messages.findLast(msg => msg.role === 'assistant' && !msg.tool_calls);
-            if (lastAiMsg) {
-                window._currentAiWrapper = chat.querySelector(`[data-index="${lastAiMsg.index}"]`);
-                window._currentAiMsgDiv = window._currentAiWrapper.querySelector('.message');
+            if (!catchingUpFromBuffer) {
+                // Clear streaming state - the chat structure has changed,
+                // so any existing wrapper references are stale.
+                // This ensures a new AI wrapper is created when streaming starts
+                // (e.g., during message regeneration).
+
+                // thanks Qwen, your comments are kinda verbose though
+                // imagine commenting on your AI's comments in your code
+                // hi potential readers of the code, you enjoying this?
+                // im starting to learn more and more javascript and
+                // hope to get the webUI to be more and more manually coded
+                // as it is the one part of openlumara that's 90% AI generated
+                // which im definitely not happy about
+
+                // also it's way too hot here right now
+                // did you know 2026 had a really bad heatwave? yup.
+                // hows your day, reader? i know you cant talk back but like,
+                // imagine if someone actually read this code and found it and
+                // talked to me about it. that would be funny lol
+
+                // it's hard to focus in this heat
+                // i'll probably look back on this code after the heatwave is over
+                // and be like... WTF Rose
+                // but like whatever
+
+                // all AI-assisted code in openlumara is done by local models btw
+                // barely any reliance on cloud API coding except for the initial draft of the webUI
+                // which was done by GLM-5 on NanoGPT
+                window._currentAiWrapper = null;
+                window._currentAiMsgDiv = null;
             }
         } catch (e) {
             console.log(e);

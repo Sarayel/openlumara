@@ -574,7 +574,7 @@ class Channel:
         self._tool_state["raw_args"] = args_str
         return delta
 
-    async def format_stream_for_text(self, stream, chunk_size=None, use_markdown=True):
+    async def format_stream_for_text(self, stream, chunk_size=None, use_markdown=True, strings: dict = None):
         """
         helper function so that channels don't need to implement this themselves...
         takes care of properly displaying all the agentic turns
@@ -588,22 +588,23 @@ class Channel:
         last_token_was_newline = False
         char_counter = 0
 
-        strings = {
-            "no_markdown": {
-                "thinking_header": "\n------\nThinking:\n\n",
-                "thinking_str": "\nthinking..\n",
-                "conclusion_header": "\n\n------\nConclusion:\n\n",
-                "processing_tool": "\n(processing results..)\n",
-                "thinking_newline": "\n"
-            },
-            "markdown": {
-                "thinking_header": "\n### Thinking\n> ",
-                "thinking_str": "*thinking..*\n",
-                "conclusion_header": "\n",
-                "processing_tool": "\n(processing results..)\n",
-                "thinking_newline": "\n> "
-            }
-        }
+        if not strings:
+            if use_markdown:
+                strings = {
+                    "thinking_header": "**Thinking**\n> ",
+                    "thinking_str": "*thinking..*",
+                    "conclusion_header": "**Conclusion**",
+                    "processing_tool": "(processing results..)",
+                    "thinking_newline": "\n> "
+                }
+            else:
+                strings = {
+                    "thinking_header": "--- Thinking ---",
+                    "thinking_str": "thinking..",
+                    "conclusion_header": "--- Conclusion ---",
+                    "processing_tool": "\n(processing results..)",
+                    "thinking_newline": "\n"
+                }
 
         string_type = "markdown" if use_markdown else "no_markdown"
 
@@ -615,7 +616,7 @@ class Channel:
             try:
                 # format the reasoning to look all fancy
                 if show_reasoning:
-                    newline_str = "\n" if not currently_reasoning else strings[string_type]["thinking_newline"]
+                    newline_str = "\n" if not currently_reasoning else strings["thinking_newline"]
                 else:
                     newline_str = "\n"
 
@@ -639,31 +640,40 @@ class Channel:
             if token_type == "reasoning" and not currently_reasoning:
                 if show_reasoning:
                     # think_str = "\n## Thinking:\n> "
-                    think_str = strings[string_type]["thinking_header"]
+                    think_str = strings["thinking_header"]
                 else:
-                    think_str = strings[string_type]["thinking_str"]
+                    think_str = strings["thinking_str"]
                 currently_reasoning = True
 
                 char_counter += len(think_str)
                 yield text_to_token(think_str)
 
+                char_counter += len("\n")
+                yield text_to_token("\n")
+
             # show conclusion header
             if token_type == "content" and show_reasoning and currently_reasoning:
-                header_str = strings[string_type]["conclusion_header"]
+                header_str = "\n"+strings["conclusion_header"]
                 char_counter += len(header_str)
                 yield text_to_token(header_str)
+
+                char_counter += len("\n")
+                yield text_to_token("\n")
 
             if token_type in ["content", "tool_calls", "tool"] and currently_reasoning:
                 # we can have multiple reasoning blocks
                 currently_reasoning = False
 
             # show tool result text
-            if token_type == "tool":
-                tool_result_str = strings[string_type]["processing_tool"]
-                char_counter += len(tool_result_str)
-                yield text_to_token(tool_result_str)
+            # if token_type == "tool":
+            #     tool_result_str = strings["processing_tool"]
+            #     char_counter += len(tool_result_str)
+            #     yield text_to_token(tool_result_str)
 
             if self.config.get("stream_tool_calls") and token_type == "tool_call_delta":
+                char_counter += len("\n")
+                yield text_to_token("\n")
+
                 # Extract the accumulated tool call from the delta
                 tc_list = token.get("tool_calls", [])
                 if tc_list:
@@ -677,11 +687,17 @@ class Channel:
                     char_counter += len(tool_delta_str)
                     yield text_to_token(tool_delta_str)
             elif not self.config.get("stream_tool_calls") and token_type == "tool_calls":
+                char_counter += len("\n")
+                yield text_to_token("\n")
+
                 tool_calls = token.get("tool_calls")
                 for tool_call in tool_calls:
-                    tool_str = "\n"+self.tc_manager.display_call(tool_call)
+                    tool_str = self.tc_manager.display_call(tool_call)+"\n"
                     char_counter += len(tool_str)
                     yield text_to_token(tool_str)
+
+                yield text_to_token("\n")
+                char_counter += len("\n")
 
             if token_type == "content":
                 yield text_to_token(content)

@@ -78,7 +78,11 @@ class Coder(core.module.Module):
     }
 
     settings = {
-        "sandbox_folder": {"default": "~/coder", "description": "The folder where all your projects are stored. The AI can only access files within this sandbox."},
+        "sandbox_folder": {"default": "~/coder", "description": "The path to the folder where all your projects are stored. The AI can only access files within this sandbox."},
+        "template_folder": {
+            "default": "modules/coder/templates",
+            "description": "The path to the folder with all your code templates. This can be used by the AI to, for example, create an openlumara module from scratch very easily, then modify it to suit your needs."
+        },
         "reading_mode": {"default": "symbols", "type": "select", "options": {"none": "Prevent reading any files", "symbols": "Target specific symbols for reading", "files": "Read entire files with limits", "both": "Enable both symbol and file reading"}},
         "writing_mode": {"default": "symbols", "type": "select", "options": {"read-only": "Prevent writing", "symbols": "Edit via symbols", "full edits": "Direct file edits", "both": "Enable both modes"}},
         "allow_total_overwrites": {"description": "Allow full file overwrites in full edits mode. Dangerous with some models.", "default": False},
@@ -113,12 +117,13 @@ class Coder(core.module.Module):
         self._parser_cache = {}
         self.enabled_tools = []
         self.sandbox_path = os.path.expanduser(str(self.config.get("sandbox_folder", default="~/sandbox"))).rstrip(os.path.sep)
+        self.templates_path = os.path.abspath(core.get_path(self.config.get("template_folder")))
 
         # prevents ReDoS attacks on every part of the coder that uses regexes
         # by using the regex library instead of standard 're'
         self.regex_timeout = 5.0
 
-        self.enabled_tools.extend(["list_project_folders", "list_project_subfolder"])
+        self.enabled_tools.extend(["list_project_folders", "list_project_subfolder", "get_template"])
 
         symbol_reading_tools = ["get_outline", "get_symbol", "format_file"]
         symbol_writing_tools = ["create_project", "create_file", "edit_symbol", "add_symbol_before", "add_symbol_after", "delete_symbol"]
@@ -396,8 +401,20 @@ class Coder(core.module.Module):
         except OSError as e:
             return self.result(f"Error creating project: {e}", success=False)
 
+    async def get_template(self, template_name: str):
+        """Retrieves the content of a coding template (see the templates listed in your system prompt)"""
+        templates = os.listdir(self.templates_path)
+        if template_name not in templates:
+            return self.result("invalid template name. check your system prompt for template names!", success=False)
+
+        # get template content and use it as the content for the new file
+        with open(os.path.join(self.templates_path, template_name), encoding="utf-8") as f:
+            content = f.read()
+
+        return content
+
     async def create_file(self, project_name: str, file_path: str, content: str):
-        """Create a new file with syntax validation. Use for entirely new files."""
+        """Creates a new file."""
         file_path_str = self._get_file_path(project_name, file_path)
         if os.path.exists(file_path_str):
             return self.result("Error: File already exists.", success=False)
@@ -1003,9 +1020,7 @@ For these languages, these instructions apply:
 ✅ CORRECT: "I need to see the imports, so I'll read the file." -> `read_file`
 ❌ WRONG: "I'll read the file to understand the function." -> `read_file` (Should use `get_symbol`)
 ❌ WRONG: "I'll edit the file directly." -> `edit` (Should use `edit_symbol`)
-
-
-"""
+""".strip()
 
         if self.config.get("add_project_list_to_system_prompt"):
             try:
@@ -1013,4 +1028,10 @@ For these languages, these instructions apply:
                 output += "\n## Available Projects\n" + "\n".join(f"- {p}" for p in sorted(projects)) + "\n" if projects else "\n## Available Projects\nNo projects exist yet.\n"
             except OSError as e:
                 output += f"\n## Available Projects\nCould not list projects: {e}\n"
+
+
+        templates = os.listdir(self.templates_path)
+        if templates:
+            output += f"\n## Available templates:\n" +"\n".join(f"- {template}" for template in sorted(templates))
+
         return output

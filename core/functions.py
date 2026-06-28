@@ -54,8 +54,12 @@ def get_path(path: str = ""):
     if not path:
         return project_root
 
-    # is a relative path
-    return sandbox_path(project_root, path)
+    if os.path.isabs(path):
+        # return an absolute path as-is
+        return path
+    else:
+        # is a relative path, return it sandboxed to the project root
+        return sandbox_path(project_root, path)
 
 def get_data_path(subpath=None):
     """get path to the data directory. contains all persistent data used by the framework"""

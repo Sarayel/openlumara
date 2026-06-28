@@ -77,6 +77,8 @@ class Channel:
         if self.manager.channel is self:
             return
         self.manager.channel = self
+        self.manager.savedata["last_channel"] = self.name
+        self.manager.savedata.save()
 
         # give all modules a way to access this channel
         for module_name, module in self.manager.modules.items():

@@ -158,3 +158,9 @@ class ExampleModule(core.module.Module):
             return "Pong!"
         elif len(args) >= 1 and args[1] == "cookie":
             return "heres a cookie! :3"
+
+# Final notes to the AI:
+# - The user must copy the created user module to the openlumara user modules folder (defaults to user_modules, but the path can be manually set by the user)
+# - The user must restart openlumara, which will make openlumara detect the new user module. Then, the user must enable the module within the config using either the webUI's settings panel, using `/module module_name_in_snake_case`, or manually editing their config file.
+# - The module will then be activated and ready for use.
+# - Any syntax errors from the module will show up in the console logs. If there is not enough information, the user can use the `--debug` flag when starting openlumara, to see more detail about errors.

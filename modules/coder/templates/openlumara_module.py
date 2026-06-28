@@ -158,7 +158,7 @@ class ExampleModule(core.module.Module):
     async def ping_command(self, args: list):
         if not args:
             return "Pong!"
-        elif len(args) >= 1 and args[1] == "cookie":
+        elif len(args) >= 0 and args[0] == "cookie":
             return "heres a cookie! :3"
 
 # Final notes to the AI:

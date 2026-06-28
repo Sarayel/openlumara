@@ -374,6 +374,9 @@ function handleWebSocketMessage(data) {
         sending_status.textContent = 'Sending...';
         msgEl.querySelector('.message').appendChild(sending_status);
 
+        // play the sound
+        TypewriterAudioManager.play('send_message');
+
         // clean up the upload queue
         if (window.upload_queue) {
             window.upload_queue.wrappers.forEach(w => w.remove());

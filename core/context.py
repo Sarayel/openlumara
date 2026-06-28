@@ -147,12 +147,13 @@ class Context:
 
         # now we inject anything modules want to inject into the user messages
         for message in messages:
-            if message.get("injection") and message.get("role") == "user":
-                content = message.get("content")
-                if content and isinstance(content, str):
-                    message["content"] += f"\n\n[SYSTEM MESSAGES]\n{message['injection']}"
+            if message.get("injection"):
+                if message.get("role") == "user":
+                    content = message.get("content")
+                    if content and isinstance(content, str):
+                        message["content"] += f"\n\n[SYSTEM MESSAGES]\n{message['injection']}"
 
-                # remove the field so that it's clean for the API
+                # remove the field from all messages so that it's clean for the API
                 del message["injection"]
 
         # 2. Build and Trim Context

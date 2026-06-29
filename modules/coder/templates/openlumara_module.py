@@ -75,7 +75,11 @@ class ExampleModule(core.module.Module):
 
     async def on_user_message(self, content: str):
         """Runs on every message the user sends. Can be used to do whatever you want with the content of a user's sent message."""
-        pass
+
+        # return False here to completely intercept the message and stop the AI from forming its own response
+        return False
+
+        # to let the AI respond to the user's message, just don't put return in the method, or return True!
 
     async def on_assistant_message(self, content: str):
         """Runs on every message received from the AI assistant. Can be used to do whatever you want with the content of a message received from the AI."""

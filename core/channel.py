@@ -266,13 +266,21 @@ class Channel:
         # run module event hooks
         for module_name, module in self.manager.modules.items():
             if hasattr(module, "on_user_message"):
+                usr_msg_result = True
+
                 try:
                     if asyncio.iscoroutinefunction(module.on_user_message):
-                        await module.on_user_message(message.get("content", ""))
+                        usr_msg_result = await module.on_user_message(message.get("content", ""))
                     else:
-                        module.on_user_message(message.get("content", ""))
+                        usr_msg_result = module.on_user_message(message.get("content", ""))
                 except Exception as e:
                     self.log("module error", f"{module_name}: in on_user_message(): {core.detail_error(e)}")
+
+                if usr_msg_result is False:
+                    # when returning False from the user message hook,
+                    # we stop the chain here, allowing the hook to basically intercept the message
+                    # and prevent the AI from returning its own response to the message
+                    return
 
         # then get the full context window
         context = await self.context.get(system_prompt=True, end_prompt=True)
@@ -397,13 +405,21 @@ class Channel:
         # run module event hooks
         for module_name, module in self.manager.modules.items():
             if hasattr(module, "on_user_message"):
+                usr_msg_result = True
+
                 try:
                     if asyncio.iscoroutinefunction(module.on_user_message):
-                        await module.on_user_message(message.get("content", ""))
+                        usr_msg_result = await module.on_user_message(message.get("content", ""))
                     else:
-                        module.on_user_message(message.get("content", ""))
+                        usr_msg_result = module.on_user_message(message.get("content", ""))
                 except Exception as e:
                     self.log("module error", f"{module_name}: in on_user_message(): {core.detail_error(e)}")
+
+                if usr_msg_result is False:
+                    # when returning False from the user message hook,
+                    # we stop the chain here, allowing the hook to basically intercept the message
+                    # and prevent the AI from returning its own response to the message
+                    return
 
         # get the new context window with the added message
         context = await self.context.get(system_prompt=True, end_prompt=True)

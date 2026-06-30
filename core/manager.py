@@ -20,6 +20,7 @@ class Manager:
         self.API = core.api_client.APIClient(self) # connect later with .connect()
         self.savedata = {}
         self.channels = {}
+        self.user_channels = {}
         self.channel = None # current active channel. gets dynamically switched around
         self.modules = {}
         self.broken_modules = [] # tracks modules that threw errors and skips them so that it doesn't break the whole framework
@@ -52,6 +53,43 @@ class Manager:
             # clear it so we can re-run this to get more from the buffer
             core.modules.log_buffer.clear()
 
+    async def _load_channels(self, storage, channels, enabled_channels, is_user_channel=False):
+        # install dependencies
+        newly_installed_channels = []
+        if not self.args.disable_auto_installer:
+            system_changed = False
+            for chan_name in enabled_channels:
+                installed = await core.modules.install_module_deps(channels, chan_name, self)
+                if installed:
+                    newly_installed_channels.append(chan_name)
+
+            if newly_installed_channels:
+                # reload config
+                core.config.load()
+
+        channels_to_load = list(core.modules.load(channels, core.channel.Channel, filter=enabled_channels, reload=True))
+
+        for channel in channels_to_load:
+            # add an instance of the channel's class to self.channels
+            channel_name = core.modules.get_name(channel)
+            try:
+                storage[channel_name] = channel(self, is_user_channel=is_user_channel)
+
+                # run installation hook
+                if channel_name in newly_installed_channels:
+                    await storage[channel_name].on_install()
+
+            except Exception as e:
+                self.log(channel_name, f"failed to load channel: {core.detail_error(e)}")
+
+        # start the channels (execute their .run() method)
+        for channel_name, channel in storage.items():
+            self.log("core", f"Starting channel {channel_name}")
+
+            await channel.on_ready()
+            self._async_tasks.add(asyncio.create_task(channel.run()))
+            self._async_tasks.add(asyncio.create_task(channel._start_push_queue()))
+
     async def run(self):
         """main loop"""
 
@@ -70,6 +108,7 @@ class Manager:
 
         # retrieve enabled channels from config
         enabled_channels = core.config.get("channels", "enabled", [])
+        enabled_user_channels = core.config.get("user_channels", "enabled", [])
         if self.args.cli:
             enabled_channels = ["cli"]
 
@@ -90,49 +129,12 @@ class Manager:
             exit(1)
 
         import channels
+        import user_channels
         import modules
         import user_modules
 
-        self.log("core", "Loading channels")
-        # install dependencies
-        newly_installed_channels = []
-        if not self.args.disable_auto_installer:
-            system_changed = False
-            for chan_name in enabled_channels:
-                installed = await core.modules.install_module_deps(channels, chan_name, self)
-                if installed:
-                    newly_installed_channels.append(chan_name)
-
-            if newly_installed_channels:
-                # reload config
-                core.config.load()
-
-        channels_to_load = list(core.modules.load(channels, core.channel.Channel, filter=enabled_channels, reload=True))
-        # always load the log channel first
-        channels_to_load.sort(key=lambda c: 0 if core.modules.get_name(c) == 'logger' else 1)
-
-        for channel in channels_to_load:
-            # add an instance of the channel's class to self.channels
-            channel_name = core.modules.get_name(channel)
-            try:
-                self.channels[channel_name] = channel(self)
-
-                # run installation hook
-                if channel_name in newly_installed_channels:
-                    await self.channels[channel_name].on_install()
-
-            except Exception as e:
-                self.log(channel_name, f"failed to load channel: {core.detail_error(e)}")
-
-        # start channels (execute their .run() method)
-        for channel_name, channel in self.channels.items():
-            self.log("core", f"Starting channel {channel_name}")
-            if hasattr(channel, "on_ready"):
-                await channel.on_ready()
-
-            self._async_tasks.add(asyncio.create_task(channel.run()))
-            # also start the message polling loop per channel
-            self._async_tasks.add(asyncio.create_task(channel._start_push_queue()))
+        self.log("core", "Loading core channels")
+        await self._load_channels(self.channels, channels, enabled_channels)
 
         if not self.channel:
             # attempt to restore last used channel from save data
@@ -144,6 +146,9 @@ class Manager:
                 if not self.channel:
                     print("ERROR: This is your first startup of openlumara and you have the CLI channel disabled. Please enable it for initial setup.")
                     exit(1)
+
+        self.log("core", "Loading user channels")
+        await self._load_channels(self.user_channels, user_channels, enabled_user_channels, is_user_channel=True)
 
         # display any error messages that were emitted
         # by the framework before the manager was initialized

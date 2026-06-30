@@ -20,7 +20,7 @@ class Channel:
     # for the framework to automatically install/uninstall
     dependencies = []
 
-    def __init__(self, manager):
+    def __init__(self, manager, is_user_channel=False):
         self.manager = manager
         self.name = core.modules.get_name(self) # shorthand alias
         self.commands = core.commands.Commands(self)
@@ -36,7 +36,7 @@ class Channel:
         self.agentic_loop_start: int = -1
 
         # load channel config
-        self.config = core.config.ConfigManager(core.config.config, ["channels", "settings", self.name])
+        self.config = core.config.ConfigManager(core.config.config, ["channels" if not is_user_channel else "user_channels", "settings", self.name])
 
         self._shutting_down = False
 

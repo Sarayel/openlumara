@@ -5,6 +5,7 @@ import core
 import modules
 import user_modules
 import channels
+import user_channels
 import pkgutil
 import hashlib
 import json
@@ -173,7 +174,7 @@ def _discover_available_names(package):
         return []
     return [modname for _, modname, _ in pkgutil.iter_modules(package.__path__)]
 
-def _get_registry_data(enabled_channels=None, enabled_modules=None, enabled_user_modules=None):
+def _get_registry_data(enabled_channels=None, enabled_user_channels=None, enabled_modules=None, enabled_user_modules=None):
     """
     Build registry data, importing ONLY enabled modules/channels.
 
@@ -185,6 +186,7 @@ def _get_registry_data(enabled_channels=None, enabled_modules=None, enabled_user
     # Build cache key from enabled lists
     cache_key = (
         tuple(enabled_channels or []),
+        tuple(enabled_user_channels or []),
         tuple(enabled_modules or []),
         tuple(enabled_user_modules or [])
     )
@@ -194,6 +196,7 @@ def _get_registry_data(enabled_channels=None, enabled_modules=None, enabled_user
 
     # Discover all available names from filesystem (no imports!)
     available_channels = _discover_available_names(channels)
+    available_user_channels = _discover_available_names(user_channels)
     available_modules = _discover_available_names(modules)
     available_user_modules = _discover_available_names(user_modules)
 
@@ -201,6 +204,10 @@ def _get_registry_data(enabled_channels=None, enabled_modules=None, enabled_user
     chan_inst = list(core.modules.load(
         channels, core.channel.Channel, filter=enabled_channels, loading_config=True
     )) if enabled_channels else []
+
+    user_chan_inst = list(core.modules.load(
+        channels, core.channel.Channel, filter=enabled_user_channels, loading_config=True
+    )) if enabled_user_channels else []
 
     mod_inst = list(core.modules.load(
         modules, core.module.Module, filter=enabled_modules, loading_config=True
@@ -217,6 +224,13 @@ def _get_registry_data(enabled_channels=None, enabled_modules=None, enabled_user
             "available_names": available_channels,
             "names": [core.modules.get_name(m) for m in chan_inst],
             "default_names": DEFAULT_CHANNELS
+        },
+        {
+            "section_key": "user_channels",
+            "instances": user_chan_inst,
+            "available_names": available_user_channels,
+            "names": [core.modules.get_name(m) for m in user_chan_inst],
+            "default_names": []
         },
         {
             "section_key": "modules",
@@ -256,7 +270,7 @@ def _get_module_schema_cache():
     If the cache is missing or outdated, it performs a refresh.
     """
     cache_path = os.path.abspath(os.path.join(core.get_path(), SCHEMA_CACHE_FILE))
-    cache = {"channels": {}, "modules": {}, "user_modules": {}}
+    cache = {"channels": {}, "user_channels": {}, "modules": {}, "user_modules": {}}
 
     # Load existing cache
     if os.path.exists(cache_path):
@@ -270,6 +284,7 @@ def _get_module_schema_cache():
 
     package_map = {
         "channels": (channels, core.channel.Channel),
+        "user_channels": (user_channels, core.channel.Channel),
         "modules": (modules, core.module.Module),
         "user_modules": (user_modules, core.module.Module)
     }
@@ -408,6 +423,7 @@ def get_module_structure():
     # Map section keys to their descriptive type strings
     type_map = {
         "channels": "channel",
+        "user_channels": "user_channel",
         "modules": "module",
         "user_modules": "user_module"
     }
@@ -567,12 +583,13 @@ def load(file_path=None):
         enabled_modules = DEFAULT_MODULES
 
     enabled_user_modules = raw_config.get("user_modules", {}).get("enabled", [])
+    enabled_user_channels = raw_config.get("user_channels", {}).get("enabled", [])
 
     # Use the new cached schema (contains all possible settings)
     schema = get_schema()
 
     # Registry only contains ENABLED instances and their available names
-    registry = _get_registry_data(enabled_channels, enabled_modules, enabled_user_modules)
+    registry = _get_registry_data(enabled_channels, enabled_user_channels, enabled_modules, enabled_user_modules)
 
     if new_config:
         target = copy.deepcopy(schema)

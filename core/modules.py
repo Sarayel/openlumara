@@ -231,7 +231,7 @@ def load(package, base_class = None, filter: list = None, reload: bool = False, 
         return ()
 
     for importer, modname, ispkg in pkgutil.iter_modules(package.__path__):
-        if filter and modname not in filter:
+        if filter is not None and modname not in filter:
             # dont even import unloaded modules
             continue
 

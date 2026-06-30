@@ -80,7 +80,9 @@ class MyChannel(core.channel.Channel):
 
             # send the request to the AI. supports simple text content and multimodal
             # returns an openAI message dictionary of format {"role": role, "content": content} (or the multimodal equivalent as per openai spec)
-            response_dict = self.send({"role": "user", "content": user_input})
+
+            # commands_authorized determines whether the user is able to use /commands to control openlumara on a system level. you can use this, for example, with a UID check on a public bot, to reject commands if the user sending the command isn't the bot admin.
+            response_dict = await self.send({"role": "user", "content": user_input}, commands_authorized=True)
 
             # optionally, run the response dict through format_message to make the output much nicer (formats reasoning headers, toolcalls etc)
             response_dict = self.format_message(response_dict)
@@ -97,10 +99,20 @@ class MyChannel(core.channel.Channel):
 
             # send the stream request to the AI. supports simple text content and multimodal
             # returns an async generator that can be looped through, the content being yielded is raw token dicts
-            stream_object = self.send_stream({"role": "user", "content": user_input})
+            try:
+                stream_object = await self.send_stream({"role": "user", "content": user_input}, commands_authorized=True)
+            except Exception as e:
+                # use self.log to trigger a cross-channel log message.
+                # it will be sent to all channels!
+                # each channel will display it using its own on_log() method.
+                # first param is category, second param is the message
+                self.log(self.name, f"error while sending stream: {core.detail_error(e)}")
+
+                # core.detail_error() is a special framework function that displays more details about an error when the user runs the framework with `--debug` enabled
 
             # the token dicts are of format: {"type": type, "content": content}
             # valid token types: prompt_progress (llamacpp-exclusive, has details about current prompt processing progress), reasoning, content, tool_call_delta (streaming toolcall parts), tool_calls (finished toolcalls), tool (tool response), token_usage, timings
+
             # you can loop through this and process it manually, like this:
             async for token in stream_object:
                 token_type = token.get("type")

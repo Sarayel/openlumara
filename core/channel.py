@@ -753,7 +753,7 @@ class Channel:
         # if dict, just use it as-is
         # otherwise, turn it into an openAI message dict
         if isinstance(message, dict):
-            self.context.chat.add(message)
+            await self.context.chat.add(message)
             await self.push_queue.put(message)
         else:
             await self.context.chat.add({"role": "assistant", "content": str(message)})

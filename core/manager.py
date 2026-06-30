@@ -126,10 +126,13 @@ class Manager:
 
         # start channels (execute their .run() method)
         for channel_name, channel in self.channels.items():
+            self.log("core", f"Starting channel {channel_name}")
+            if hasattr(channel, "on_ready"):
+                await channel.on_ready()
+
             self._async_tasks.add(asyncio.create_task(channel.run()))
             # also start the message polling loop per channel
             self._async_tasks.add(asyncio.create_task(channel._start_push_queue()))
-            self.log("core", f"Started channel {channel_name}")
 
         if not self.channel:
             # attempt to restore last used channel from save data
@@ -249,8 +252,6 @@ class Manager:
 
         # run everything
         self.log("core", "Startup complete")
-        for name, channel in self.channels.items():
-            await channel.on_ready()
 
         try:
             await asyncio.gather(*self._async_tasks, return_exceptions=should_swallow_exceptions)

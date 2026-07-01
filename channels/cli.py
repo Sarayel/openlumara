@@ -133,7 +133,9 @@ class Cli(core.channel.Channel):
         if core.quiet:
             return
 
-        print(f"[{category.upper()}] {message}", flush=True)
+        # allow hiding the category string for special formatting and stuff
+        cat_str = f"[{category.upper()}] " if category else ""
+        print(f"{cat_str}{message}", flush=True)
 
     def on_shutdown(self):
         self.running = False

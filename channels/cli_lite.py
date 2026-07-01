@@ -17,8 +17,12 @@ class CliLite(core.channel.Channel):
             print(response.get("content"), flush=True)
 
     def on_log(self, category, message):
-        if not core.quiet:
-            print(f"[{category.upper()}] {message}")
+        if core.quiet:
+            return
+
+        # allow hiding the category string for special formatting and stuff
+        cat_str = f"[{category.upper()}] " if category else ""
+        print(f"{cat_str}{message}", flush=True)
 
     async def on_push(self, message):
         print("\n"+message.get("content"), flush=True)

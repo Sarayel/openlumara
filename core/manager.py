@@ -251,6 +251,7 @@ class Manager:
 
         # run everything
         self.log("core", "Startup complete")
+        self.log("", "-"*40)
 
         try:
             # actually run everything

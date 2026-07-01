@@ -132,7 +132,7 @@ class APIClient():
         self._connection_attempts = 0
         self.supports_developer_role = core.config.get("api", "use_developer_role", default=False)
 
-        self.manager.log("API", "Successfully connected to AI")
+        # self.manager.log("API", "Successfully connected to AI")
         return True
 
     def get_connection_status(self):

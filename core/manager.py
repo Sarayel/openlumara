@@ -21,7 +21,6 @@ class Manager:
         self.savedata = {}
 
         self.channels = {}
-        self.user_channels = {}
         self.channel = None # current active channel. gets dynamically switched around
 
         self.modules = {}
@@ -57,7 +56,7 @@ class Manager:
             # clear it so we can re-run this to get more from the buffer
             core.modules.log_buffer.clear()
 
-    async def _load_channels(self, storage, channels, enabled_channels, is_user_channel=False):
+    async def _load_channels(self, storage, channels, enabled_channels, is_user_channels=False):
         # install dependencies
         newly_installed_channels = []
         if not self.args.disable_auto_installer:
@@ -77,7 +76,7 @@ class Manager:
             # add an instance of the channel's class to self.channels
             channel_name = core.modules.get_name(channel)
             try:
-                storage[channel_name] = channel(self, is_user_channel=is_user_channel)
+                storage[channel_name] = channel(self, is_user_channel=is_user_channels)
 
                 # run installation hook
                 if channel_name in newly_installed_channels:
@@ -86,17 +85,10 @@ class Manager:
             except Exception as e:
                 self.log(channel_name, f"failed to load channel: {core.detail_error(e)}")
 
-        # start the channels (execute their .run() method)
-        for channel_name, channel in storage.items():
-            self.log("core", f"Starting channel {channel_name}")
+            is_user_str = "user " if is_user_channels else ""
+            self.log("core", f"loaded {is_user_str}channel : {channel_name}")
 
-            await channel.on_ready()
-            self._async_tasks.add(asyncio.create_task(channel.run()))
-            self._async_tasks.add(asyncio.create_task(channel._start_push_queue()))
-
-    async def _load_modules(self, storage, modules, enabled_modules, is_user_module=False):
-        loaded_module_names = []
-
+    async def _load_modules(self, storage, modules, enabled_modules, is_user_modules=False):
         # install dependencies
         newly_installed_modules = []
         if not self.args.disable_auto_installer:
@@ -112,7 +104,7 @@ class Manager:
         # import/load only the enabled modules
         for module in core.modules.load(modules, core.module.Module, filter=enabled_modules, reload=True):
             try:
-                loaded_module = await self.add_module_class(module, is_user_module=is_user_module)
+                loaded_module = await self.add_module_class(module, is_user_module=is_user_modules)
 
                 # run installation hook
                 if loaded_module.name in newly_installed_modules:
@@ -122,14 +114,11 @@ class Manager:
                 await self.load_module_tools(loaded_module)
 
                 storage[loaded_module.name] = loaded_module
-                loaded_module_names.append(loaded_module.name)
+
+                is_user_str = "user " if is_user_modules else ""
+                self.log("core", f"loaded {is_user_str}module : {loaded_module.name}")
             except Exception as e:
                 self.log_error(f"could not load module {module.__name__}", e)
-
-        if loaded_module_names:
-            self.log("core", f"Modules loaded: {', '.join(loaded_module_names)}")
-        else:
-            self.log("core", f"All modules are disabled")
 
     async def run(self):
         """main loop"""
@@ -152,6 +141,7 @@ class Manager:
         enabled_user_channels = core.config.get("user_channels", "enabled", [])
         if self.args.cli:
             enabled_channels = ["cli"]
+            enabled_user_channels = []
 
         # retrieve enabled modules from config
         enabled_modules = core.config.get("modules", "enabled", [])
@@ -170,11 +160,15 @@ class Manager:
             exit(1)
 
         import channels
-        import user_channels
         import modules
-        import user_modules
 
-        self.log("core", "Loading core channels")
+        if enabled_user_channels:
+            import user_channels
+        if enabled_user_modules:
+            import user_modules
+
+        self.log("core", "Loading core channels..")
+        print("[CORE] Loading core channels..") # cheating here because at this point none of the channels are actually here yet lol
         await self._load_channels(self.channels, channels, enabled_channels)
 
         if not self.channel:
@@ -188,52 +182,24 @@ class Manager:
                     print("ERROR: This is your first startup of openlumara and you have the CLI channel disabled. Please enable it for initial setup.")
                     exit(1)
 
-        self.log("core", "Loading user channels")
-        await self._load_channels(self.user_channels, user_channels, enabled_user_channels, is_user_channel=True)
+        if enabled_user_channels:
+            self.log("core", "Loading user channels..")
+            await self._load_channels(self.channels, user_channels, enabled_user_channels, is_user_channels=True)
+
+        # make our instance accessible even without a reference
+        global_instance = self
 
         # display any error messages that were emitted
         # by the framework before the manager was initialized
         self._drain_log_buffers()
 
-        # make our instance accessible even without a reference
-        global_instance = self
-
+        self.log("core", "Loading modules..")
         if enabled_modules:
-            self.log("core", "Loading core modules")
             await self._load_modules(self.modules, modules, enabled_modules)
 
         if enabled_user_modules:
-            self.log("core", "Loading user modules")
-            await self._load_modules(self.modules, user_modules, enabled_user_modules, is_user_module=True)
-
-            # # install dependencies
-            # newly_installed_user_modules = []
-            # if not self.args.disable_auto_installer:
-            #     for mod_name in enabled_user_modules:
-            #         installed = await core.modules.install_module_deps(user_modules, mod_name, self)
-            #
-            #         if installed:
-            #             newly_installed_user_modules.append(mod_name)
-            #
-            #     if newly_installed_user_modules:
-            #         # reload config
-            #         core.config.load()
-            #
-            # for module in core.modules.load(user_modules, core.module.Module, filter=enabled_user_modules, reload=True):
-            #     try:
-            #         loaded_module = await self.add_module_class(module, is_user_module=True)
-            #
-            #         # run installation hook
-            #         if loaded_module.name in newly_installed_user_modules:
-            #             await loaded_module.on_install()
-            #
-            #         await loaded_module._start()
-            #         await self.load_module_tools(loaded_module)
-            #
-            #         self.modules[loaded_module.name] = loaded_module
-            #         loaded_module_names.append(loaded_module.name)
-            #     except Exception as e:
-            #         self.log_error(f"could not load user module {module.__name__}", e)
+            self.log("core", "Loading user modules..")
+            await self._load_modules(self.modules, user_modules, enabled_user_modules, is_user_modules=True)
 
         if not self.args.disable_auto_installer:
             # uninstall dependencies for disabled modules (only if deps are still installed)
@@ -267,13 +233,22 @@ class Manager:
                 # reload config
                 core.config.load()
 
+        # start the channels (execute their .run() method)
+        for channel_name, channel in self.channels.items():
+            self.log("core", f"Starting channel {channel_name}")
+
+            await channel.on_ready()
+            self._async_tasks.add(asyncio.create_task(channel.run()))
+            self._async_tasks.add(asyncio.create_task(channel._start_push_queue()))
+
         # Attempt API connection but don't fail if it doesn't work
-        await self._initialize_api_connection()
+        # await self._initialize_api_connection()
 
         # run everything
         self.log("core", "Startup complete")
 
         try:
+            # actually run everything
             await asyncio.gather(*self._async_tasks, return_exceptions=should_swallow_exceptions)
         except KeyboardInterrupt:
             pass
@@ -320,21 +295,6 @@ class Manager:
         for channel_name, channel in self.channels.items():
             if hasattr(channel, "on_shutdown"):
                 self.log("core", f"Shutting down channel {channel_name}")
-
-                try:
-                    await channel._shutdown()
-
-                    if asyncio.iscoroutinefunction(channel.on_shutdown):
-                        await channel.on_shutdown()
-                    else:
-                        channel.on_shutdown()
-                except Exception as e:
-                    self.log_error(f"Error shutting down {channel_name}", e)
-
-        # shutdown user channels
-        for channel_name, channel in self.user_channels.items():
-            if hasattr(channel, "on_shutdown"):
-                self.log("core", f"Shutting down user channel {channel_name}")
 
                 try:
                     await channel._shutdown()

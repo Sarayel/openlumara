@@ -53,7 +53,7 @@ def _install_deps(module_name, packages, manager):
     """install pip packages"""
     if not packages:
         return
-    manager.log(module_name, f"installing dependencies: {', '.join(packages)}")
+    manager.log("core", f"installing dependencies for {module_name}: {', '.join(packages)}")
 
     try:
         subprocess.check_call(
@@ -68,7 +68,7 @@ def _uninstall_deps(module_name, packages, manager):
     """uninstall pip packages"""
     if not packages:
         return
-    manager.log(module_name, f"uninstalling dependencies: {', '.join(packages)}")
+    manager.log("core", f"uninstalling dependencies for {module_name}: {', '.join(packages)}")
 
     try:
         subprocess.check_call(

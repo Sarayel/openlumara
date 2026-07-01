@@ -13,7 +13,7 @@ def get_available_channels():
     structure = core.config.get_module_structure()
     channels = []
     for name, data in structure.items():
-        if data.get("metadata", {}).get("type") == "channel":
+        if data.get("metadata", {}).get("type") in ("channel", "user_channel"):
             channels.append(name)
 
     return channels
@@ -732,6 +732,10 @@ class Channel:
             if token_type == "reasoning" and show_reasoning:
                 char_counter += len(content)
                 yield text_to_token(content)
+
+    async def run(self):
+        # stub, meant for derivative channels to override
+        pass
 
     async def on_ready(self):
         """

@@ -175,4 +175,3 @@ def sandbox_path(base_path: str, requested_path: str) -> str:
         return real_path
     else:
         raise ValueError("Access denied: target path is outside sandbox")
-1

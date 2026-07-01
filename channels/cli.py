@@ -130,6 +130,9 @@ class Cli(core.channel.Channel):
             # SKIP
             return
 
+        if core.quiet:
+            return
+
         print(f"[{category.upper()}] {message}", flush=True)
 
     def on_shutdown(self):

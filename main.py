@@ -21,11 +21,12 @@ async def main_loop(arg_list):
     # parse the --config arg
     arg_pre_parser = argparse.ArgumentParser(add_help=False)
     arg_pre_parser.add_argument("--config")
+    arg_pre_parser.add_argument("--quiet", help="surpress logs", action="store_true")
     pre_args, _ = arg_pre_parser.parse_known_args(arg_list)
 
     # load config file, allowing the path to be overridden
     config_display_str = "config.yaml" if not pre_args.config else pre_args.config
-    if not core.quiet:
+    if not pre_args.quiet:
         core.log("core", f"Loading settings from config {config_display_str}")
 
     core.config.load(pre_args.config)

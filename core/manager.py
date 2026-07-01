@@ -168,7 +168,8 @@ class Manager:
             import user_modules
 
         self.log("core", "Loading core channels..")
-        print("[CORE] Loading core channels..") # cheating here because at this point none of the channels are actually here yet lol
+        if not core.quiet:
+            print("[CORE] Loading core channels..") # cheating here because at this point none of the channels are actually here yet lol
         await self._load_channels(self.channels, channels, enabled_channels)
 
         if not self.channel:

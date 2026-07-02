@@ -137,6 +137,10 @@ async def uninstall_module_deps(package, module_name, manager, exclude=None):
                 deps = _extract_deps_from_file(_get_module_file_path(importlib.import_module("channels"), mod_name))
                 if deps:
                     exclude.update(deps)
+            for mod_name in core.config.get("user_channels", "enabled", []):
+                deps = _extract_deps_from_file(_get_module_file_path(importlib.import_module("user_channels"), mod_name))
+                if deps:
+                    exclude.update(deps)
         except Exception:
             pass  # proceed without exclusion if config/package lookup fails
 

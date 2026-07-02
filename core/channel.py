@@ -616,9 +616,9 @@ class Channel:
         if not strings:
             if use_markdown:
                 strings = {
-                    "thinking_header": "**Thinking**\n\n> ",
+                    "thinking_header": "## Thinking:\n> ",
                     "thinking_str": "*thinking..*",
-                    "conclusion_header": "**Conclusion**",
+                    "conclusion_header": "## Conclusion:",
                     "processing_tool": "(processing results..)",
                     "thinking_newline": "\n> "
                 }
@@ -665,7 +665,7 @@ class Channel:
             if token_type == "reasoning" and not currently_reasoning:
                 if show_reasoning:
                     # think_str = "\n## Thinking:\n> "
-                    think_str = strings["thinking_header"]
+                    think_str = "\n"+strings["thinking_header"]
                 else:
                     think_str = strings["thinking_str"]
                 currently_reasoning = True

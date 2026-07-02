@@ -137,7 +137,7 @@ class ApiBridge(core.channel.Channel):
         @app.get("/v1/models")
         async def list_models():
             """Returns a list of available models."""
-            models = [self.Model(id="openlumara"]
+            models = [self.Model(id="openlumara")]
             #for model_id in await self.manager.API.list_models():
             #    models.append(self.Model(id=model_id))
             return self.ModelsResponse(data=models)

@@ -24,6 +24,8 @@ class APIClient():
         self.prompt_warming_up = False
         self.cancel_prompt_warmup = False
         self._warmup_task = None
+        self._warmup_queue = asyncio.Queue()
+        self._warmup_done = asyncio.Event()
 
         self._connection_error = None
         self._last_connection_attempt = None
@@ -59,7 +61,7 @@ class APIClient():
         base_msg = messages.get(error_type, messages["unknown"])
 
         result = {"message": base_msg}
-        
+
         # Always include raw error details if available - the frontend can decide how to display
         if exception:
             result["raw_error"] = str(exception)
@@ -277,31 +279,40 @@ class APIClient():
                 }, ensure_ascii=True, sort_keys=True)
             )
 
+        response = None
         try:
-            # check for cancellation before starting the request
-            # to prevent continuing a toolcall chain
+            # if at this point a cancel was already requested,
+            # it was likely from a toolcalling chain, so abort EVERYTHING
             if self.cancel_request and not self.prompt_warming_up:
-                if core.debug:
-                    self.manager.log("api", "Cancelling request")
-                return {"error": "cancelled", **self._get_user_friendly_message("cancelled")}
+                raise asyncio.CancelledError("Request cancelled")
+
+            request_task = asyncio.create_task(self._AI.chat.completions.create(**req))
 
             # wrap the request in a way that we can check for cancellation
             # since openai's async client doesn't natively support an abort signal
             # easily through the high-level chat.completions.create, we use a task
             # so we can actually cancel the task itself.
 
-            request_task = asyncio.create_task(self._AI.chat.completions.create(**req))
-
             # monitor the task and the cancel_request flag
             while not request_task.done():
                 if self.cancel_request or self.cancel_prompt_warmup:
                     request_task.cancel()
-                    await self.stop_prompt_warmup()
-                    raise asyncio.CancelledError("request cancelled")
+                    raise asyncio.CancelledError("Request cancelled")
 
                 await asyncio.sleep(0.1)
 
             response = await request_task
+
+        except asyncio.CancelledError as e:
+            # fully kill the connection because ive been debuggging this for like 5 hours and im tired
+            # make it stop
+            self.manager.log("api", "Force closing HTTP connection due to unclean state..")
+            await self.disconnect()
+
+            self.cancel_request = False
+
+            # and propagate it up for any other stuff to handle
+            raise
 
         except openai.BadRequestError as e:
             # Check if the error message specifically mentions the model is not found
@@ -313,14 +324,6 @@ class APIClient():
                 # It's a different kind of 400 error (e.g., invalid parameters)
                 self.manager.log_error("Bad request (400)", e)
                 return {"error": "api_error", **self._get_user_friendly_message("api_error", e)}
-
-        except asyncio.CancelledError as e:
-            if self.prompt_warming_up:
-                # propate it up the chain
-                raise
-
-            self.manager.log_error("request was cancelled", e)
-            return {"error": "cancelled", **self._get_user_friendly_message("cancelled")}
 
         except openai.AuthenticationError as e:
             self.manager.log_error("Authentication error", e)
@@ -353,66 +356,97 @@ class APIClient():
             self.connected = False
             return {"error": "unknown", **self._get_user_friendly_message("unknown", e)}
 
+        finally:
+            self.cancel_request = False
+
         if core.debug:
             self.manager.log("debug:response", str(response))
 
         return response
 
-    async def _run_warmup(self, context=None, notify=True):
-        try:
-            if not context:
-                prompt = await self.manager.get_system_prompt()
-                context = [{"role": "system", "content": prompt}]
+    async def stop_prompt_warmup(self):
+        if self._warmup_task and not self._warmup_task.done():
+            self.cancel_prompt_warmup = True
+            self._warmup_task.cancel()
+            try:
+                await self._warmup_task
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                self.manager.log_error("Warmup task failed", e)
+            finally:
+                self.cancel_prompt_warmup = False
 
-            self.prompt_warming_up = True
-            await self._request(context, stream=False, tools=self.manager.tools, use_thinking=False, max_completion_tokens=1)
-            self.prompt_warming_up = False
+        # clear the queue completely
+        while not self._warmup_queue.empty():
+            try:
+                self._warmup_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
 
-            if notify:
-                self.manager.log("API", "Prompt warmup complete")
-
-        except asyncio.CancelledError:
-            # Silently ignore when the task is cancelled during chat switch
-            if core.debug:
-                self.manager.log("API", "Interrupting prompt warmup")
-            pass
-        finally:
-            self.prompt_warming_up = False
+        self._warmup_task = None
+        self.prompt_warming_up = False
 
     async def start_prompt_warmup(self, context=None, notify=True):
         # cancel existing warmup task if there's already one running
         # (for example if the warmup is running for one chat,
         # and the user switches to a different one)
         await self.stop_prompt_warmup()
+        self._warmup_done.clear()
 
         self._warmup_task = asyncio.create_task(self._run_warmup(context=context, notify=notify))
         if notify:
             self.manager.log("API", "Sending prompt in advance to make AI response instant.. (prompt warmup)")
 
-    async def stop_prompt_warmup(self):
-        if self._warmup_task and not self._warmup_task.done():
-            self.cancel_prompt_warmup = True # makes the loop in _request force stop
+    async def _run_warmup(self, context=None, notify=True):
+        self._warmup_done.clear()
+        self.prompt_warming_up = True
 
-            self._warmup_task.cancel()
-            try:
-                await self._warmup_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                if core.debug:
-                    self.manager.log("api", "Warmup task failed during cancellation")
-            finally:
-                self.cancel_prompt_warmup = False
-        self._warmup_task = None
-        self.prompt_warming_up = False
+        try:
+            if not context:
+                prompt = await self.manager.get_system_prompt()
+                context = [{"role": "system", "content": prompt}]
+
+            response = await self._request(context, stream=True, tools=self.manager.tools, use_thinking=False, max_completion_tokens=1)
+
+            if isinstance(response, dict):
+                # thats an error
+                return
+
+        except Exception as e:
+            self.manager.log("api", f"Failure while sending prompt warmup request to AI: {core.detail_error(e)}")
+
+        try:
+            async for token in self._recv_stream(response):
+                if self.cancel_request:
+                    raise asyncio.CancelledError("Warmup task cancelled")
+
+                if token.get("type") == "prompt_progress":
+                    await self._warmup_queue.put(token)
+            if notify:
+                self.manager.log("API", "Prompt warmup complete")
+
+        except asyncio.CancelledError:
+            # fully kill the connection because ive been debuggging this for like 5 hours and im tired
+            # make it stop
+            self.manager.log("api", "Force closing HTTP connection due to unclean state..")
+            await self.disconnect()
+        except Exception as e:
+            self.manager.log_error("Warmup request failed", e)
+        finally:
+            self.prompt_warming_up = False
+            self._warmup_done.set()
 
     async def send(self, context: list, system_prompt=True, use_tools=True, tools=None, use_thinking=True, **kwargs):
         """send a message to the LLM. returns a string or error dict"""
 
         self.cancel_request = False
 
-        # cancel the prompt warmup if it's still running
-        await self.stop_prompt_warmup()
+        # wait for the system prompt warmup to finish if it's still running
+        if self._warmup_task and not self._warmup_task.done():
+            if core.debug:
+                self.manager.log("API", "Waiting for prompt warmup to complete..")
+            await self._warmup_task
 
         # use default tools if not specified. allow overrides
         if not tools:
@@ -430,17 +464,29 @@ class APIClient():
         except Exception as e:
             self.manager.log_error("error while processing response from AI", e)
             return {"error": "processing_failed", **self._get_user_friendly_message("processing_failed", e)}
-        finally:
-            await self.stop_prompt_warmup()
-            self.cancel_request = False
 
     async def send_stream(self, context: list, use_tools=True, tools=None, use_thinking=True, **kwargs):
         """send a message to the LLM. is an iterable async generator"""
 
         self.cancel_request = False
 
-        # cancel the prompt warmup if it's still running
-        await self.stop_prompt_warmup()
+        # drain progress tokens while waiting for warmup to finish
+        # so that warmup progress can be shown in channels
+        if self._warmup_task and not self._warmup_task.done():
+            while not self._warmup_done.is_set():
+                try:
+                    token = self._warmup_queue.get_nowait()
+                    yield token
+                except asyncio.QueueEmpty:
+                    await asyncio.sleep(0.01)
+
+        # drain any remaining tokens that arrived while we were yielding
+        while not self._warmup_queue.empty():
+            yield await self._warmup_queue.get()
+
+        # wait for the prompt warmup to actually finish
+        if self._warmup_task and not self._warmup_task.done():
+            await self._warmup_task
 
         # use default tools if not specified. allow overrides
         if not tools:
@@ -449,8 +495,8 @@ class APIClient():
         response = await self._request(context, tools=(tools if use_tools else None), stream=True, use_thinking=use_thinking, **kwargs)
 
         # return errors if applicable
-        if isinstance(response, dict) and "error" in response:
-            yield {"type": "error", "content": response}
+        if isinstance(response, dict):
+            yield response
             return
 
         try:
@@ -467,9 +513,6 @@ class APIClient():
         except Exception as e:
             self.manager.log_error("error while sending request to AI", e)
             yield {"type": "error", "content": {"error": "stream_failed", **self._get_user_friendly_message("processing_failed", e)}}
-        finally:
-            await self.stop_prompt_warmup()
-            self.cancel_request = False
 
     async def cancel(self):
         """cancel a request that's been sent to the AI"""

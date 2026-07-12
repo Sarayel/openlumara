@@ -366,8 +366,9 @@ function handleWebSocketMessage(data) {
             // process the buffer in batches so that we don't crash the browser
             processBuffer(data.buffer);
         } else {
+            // Empty buffer — just set local state, don't trigger backend call
             if (data.active_chat_id) {
-                loadChat(data.active_chat_id);
+                currentChatId = data.active_chat_id;
             }
         }
         return;
@@ -375,9 +376,16 @@ function handleWebSocketMessage(data) {
 
     if (data.type === 'chat_switched') {
         if (data.chat_id === currentChatId) return;
-        window.loadChat(data.chat_id, catchingUpFromBuffer, true);
+
+        if (isChatSwitching) return;
+        isChatSwitching = true;
+
+        window.loadChat(data.chat_id, catchingUpFromBuffer, true).finally(() => {
+            isChatSwitching = false;
+        });
         return;
     }
+
 
     if (data.type === 'user_message_added') {
         msgEl = handleNewMessage(data.message);

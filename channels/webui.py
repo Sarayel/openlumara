@@ -293,6 +293,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Signal the API to stop
                     if channel_instance:
                         await channel_instance.manager.API.cancel()
+                        manager.stream_buffer.clear()
 
                 elif msg_type == "cancel":
                     stream_id = data.get("id")
@@ -1107,7 +1108,8 @@ async def load_chat(id: str, user: str = Depends(require_auth)):
     # prevent buggy frontend code from reloading the same chat more than once (ugh)
     curr_chat_id = await channel_instance.context.chat.get_id()
 
-    if id.strip() == curr_chat_id.strip():
+    is_current_chat = id.strip() == curr_chat_id.strip()
+    if is_current_chat:
         # since the webui frontend is so picky about things (i REALLY need to rewrite a lot of it manually..)
         # we just trick the webui into thinking we did a full load
         # but really, we just pass the data we've already loaded
@@ -1132,7 +1134,8 @@ async def load_chat(id: str, user: str = Depends(require_auth)):
     for i, msg in enumerate(messages):
         msg['index'] = i
 
-    await manager.broadcast({"type": "chat_switched", "chat_id": loaded_id})
+    if not is_current_chat:
+        await manager.broadcast({"type": "chat_switched", "chat_id": loaded_id})
 
     return {
         'success': True, 'chat': {

@@ -156,12 +156,13 @@ function renderStreamSegments(msgDiv, onlyUpdateLast = false) {
             msgDiv.appendChild(seg.el);
         }
 
-        if (!onlyUpdateLast || i === streamSegments.length - 1) {
-            updateSegmentContent(seg, i);
-        }
+        // Only update the last segment when streaming
+        if (onlyUpdateLast && i < streamSegments.length - 1) continue;
+
+        updateSegmentContent(seg, i);
     }
 
-    highlightCode(msgDiv);
+    highlightCode(msgDiv, onlyUpdateLast || streamSegments.length > 1);
     scrollToBottomDelayed();
 }
 

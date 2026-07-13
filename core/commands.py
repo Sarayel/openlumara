@@ -417,16 +417,12 @@ class Commands:
                 await self.channel.manager.API.disconnect()
                 return "Disconnected from API"
             case "status":
-                status = self.channel.manager.get_api_status()
+                status = self.channel.manager.API.get_connection_status()
                 lines = ["== API Status =="]
 
                 lines.append(f"Connected: {'Yes' if status['connected'] else 'No'}")
                 lines.append(f"Model: {status['model'] or 'Not set'}")
                 lines.append(f"URL: {status['url']}")
-                lines.append(f"Key configured: {'Yes' if status['key_configured'] else 'No'}")
-
-                if status['error']:
-                    lines.append(f"Last error: {status['error']}")
 
                 lines.append("")
                 lines.append("== Context Size ==")

@@ -32,7 +32,7 @@ import yaml
 import logging
 import io
 
-VERSION = "8.1.3"
+VERSION = "8.1.4"
 WEBUI_DIR = core.get_path("channels/webui")
 
 # ordered list of javascript files, to load in this exact order

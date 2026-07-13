@@ -35,11 +35,11 @@ class APIClient():
         self._messages = []
 
         self.cancel_request = False
-        self.prompt_warming_up = False
-        self.cancel_prompt_warmup = False
-        self._warmup_task = None
-        self._warmup_queue = asyncio.Queue()
-        self._warmup_done = asyncio.Event()
+        # self.prompt_warming_up = False
+        # self.cancel_prompt_warmup = False
+        # self._warmup_task = None
+        # self._warmup_queue = asyncio.Queue()
+        # self._warmup_done = asyncio.Event()
 
         self._connection_error = None
         self._last_connection_attempt = None
@@ -116,7 +116,10 @@ class APIClient():
         # so that the AI is ready to respond right away when the user has finished
         # typing their message
         # (thanks to https://www.reddit.com/r/LocalLLaMA/comments/1uskb1g/speculative_cache_warming_warms_your_cache_while/ for the idea)
-        await self.start_prompt_warmup(context=[{"role": "system", "content": await self.manager.get_system_prompt()}], notify=False)
+        
+
+        # PROMPT WARMING DISABLED FOR NOW (it's extremely buggy and needs a few days of extra polish. it's causing race conditions all over the place)
+        #await self.start_prompt_warmup(context=[{"role": "system", "content": await self.manager.get_system_prompt()}], notify=False)
 
         return True
 
@@ -256,7 +259,8 @@ class APIClient():
         try:
             # if at this point a cancel was already requested,
             # it was likely from a toolcalling chain, so abort EVERYTHING
-            if self.cancel_request and not self.prompt_warming_up:
+            #if self.cancel_request and not self.prompt_warming_up:
+            if self.cancel_request:
                 raise asyncio.CancelledError("Request cancelled")
 
             request_task = asyncio.create_task(self._AI.chat.completions.create(**req))
@@ -268,7 +272,8 @@ class APIClient():
 
             # monitor the task and the cancel_request flag
             while not request_task.done():
-                if self.cancel_request or self.cancel_prompt_warmup:
+                #if self.cancel_request or self.cancel_prompt_warmup:
+                if self.cancel_request:
                     request_task.cancel()
                     raise asyncio.CancelledError("Request cancelled")
 
@@ -413,10 +418,10 @@ class APIClient():
                 return reconnected
 
         # wait for the system prompt warmup to finish if it's still running
-        if self._warmup_task and not self._warmup_task.done():
-            if core.debug:
-                self.manager.log("API", "Waiting for prompt warmup to complete..")
-            await self._warmup_task
+        # if self._warmup_task and not self._warmup_task.done():
+        #     if core.debug:
+        #         self.manager.log("API", "Waiting for prompt warmup to complete..")
+        #     await self._warmup_task
 
         # use default tools if not specified. allow overrides
         if not tools:
@@ -448,22 +453,24 @@ class APIClient():
                 return
 
         # drain progress tokens while waiting for warmup to finish
+        # DISABLED DUE TO INTRODUCING A MYRIAD OF BUGS (see my other comments in connect())
+
         # so that warmup progress can be shown in channels
-        if self._warmup_task and not self._warmup_task.done():
-            while not self._warmup_done.is_set():
-                try:
-                    token = self._warmup_queue.get_nowait()
-                    yield token
-                except asyncio.QueueEmpty:
-                    await asyncio.sleep(0.01)
+        # if self._warmup_task and not self._warmup_task.done():
+        #     while not self._warmup_done.is_set():
+        #         try:
+        #             token = self._warmup_queue.get_nowait()
+        #             yield token
+        #         except asyncio.QueueEmpty:
+        #             await asyncio.sleep(0.01)
 
         # drain any remaining tokens that arrived while we were yielding
-        while not self._warmup_queue.empty():
-            yield await self._warmup_queue.get()
+        # while not self._warmup_queue.empty():
+        #     yield await self._warmup_queue.get()
 
         # wait for the prompt warmup to actually finish
-        if self._warmup_task and not self._warmup_task.done():
-            await self._warmup_task
+        # if self._warmup_task and not self._warmup_task.done():
+        #     await self._warmup_task
 
         # use default tools if not specified. allow overrides
         if not tools:

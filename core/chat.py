@@ -116,7 +116,7 @@ class Chat:
         #self.data.save()
 
         # start a system prompt warmup so that the response is instant (if the user types slowly... lol)
-        await self.channel.manager.API.start_prompt_warmup(notify=core.debug)
+        #await self.channel.manager.API.start_prompt_warmup(notify=core.debug)
 
         return True
     async def clear(self):
@@ -133,7 +133,7 @@ class Chat:
         await self.save()
 
         # start a system prompt warmup so that the response is instant (if the user types slowly... lol)
-        await self.channel.manager.API.start_prompt_warmup(notify=core.debug)
+        #await self.channel.manager.API.start_prompt_warmup(notify=core.debug)
 
         return True
 
@@ -158,10 +158,10 @@ class Chat:
                 self.current -= 1
 
         # start a prompt warmup using this chat's data
-        try:
-            await self.channel.manager.API.start_prompt_warmup(context=await self.channel.context.get(), notify=core.debug)
-        except Exception as e:
-            self.channel.log("core", f"failure while sending prompt warmup to API: {core.detail_error(e)}")
+        # try:
+        #     await self.channel.manager.API.start_prompt_warmup(context=await self.channel.context.get(), notify=core.debug)
+        # except Exception as e:
+        #     self.channel.log("core", f"failure while sending prompt warmup to API: {core.detail_error(e)}")
 
         return self.current
 
@@ -180,10 +180,10 @@ class Chat:
         self._set_current(index)
 
         # start a prompt warmup using this chat's data
-        try:
-            await self.channel.manager.API.start_prompt_warmup(context=await self.channel.context.get(), notify=core.debug)
-        except Exception as e:
-            self.channel.log("core", f"failure while sending prompt warmup to API: {core.detail_error(e)}")
+        # try:
+        #     await self.channel.manager.API.start_prompt_warmup(context=await self.channel.context.get(), notify=core.debug)
+        # except Exception as e:
+        #     self.channel.log("core", f"failure while sending prompt warmup to API: {core.detail_error(e)}")
 
         return True
 

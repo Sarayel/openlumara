@@ -6,6 +6,20 @@ import json
 import time
 import inspect
 
+class APIError:
+    """Simple class that holds an error message, used for passing on to channels"""
+    def __init__(self, message: str, exc = None):
+        self.message = message
+        
+        # store exception if relevant
+        self.exc = None
+        if exc:
+            self.exc = exc
+
+    def __str__(self):
+        exc_str = f": {core.detail_error(self.exc)}" if self.exc is not None else ""
+        return f"{self.message}{exc_str}"
+
 class APIClient():
     """
     wrapper around the openAI API to make sending/receiving messages easier to work with
@@ -35,38 +49,6 @@ class APIClient():
         self._httpx_client = None
 
         self.supports_developer_role = False
-
-    def _get_user_friendly_message(self, error_type, exception=None):
-        """
-        Maps technical error types to polite, actionable messages for end-users.
-        Returns a dict with both a friendly message and the raw error details.
-        """
-
-        model_msg = f"Model {self._model} not found" if self._model else "You have no model set"
-        messages = {
-            "auth_failed": "Your API key is invalid or expired. Please check your configuration settings.",
-            "connection_lost": "Lost connection to the AI server.",
-            "rate_limit": "You are sending requests too quickly. Please wait a moment before trying again.",
-            "api_error": "The AI server returned an unknown error. Please try again in a few minutes.",
-            "model_not_found": f"{model_msg}. Please select a model by using `/models` or the Settings in the WebUI",
-            "cancelled": "The request was cancelled.",
-            "blank_request": "The request was empty. Please try typing your message again.",
-            "processing_failed": "Failed to process the response from the AI. Please try sending your message again.",
-            "invalid_response": "The AI returned an unexpected format. Please try again.",
-            "unknown": "An unexpected error occurred.",
-            "not_connected": "You are not connected to the AI server."
-        }
-
-        # Fallback to a generic message if the key isn't found
-        base_msg = messages.get(error_type, messages["unknown"])
-
-        result = {"message": base_msg}
-
-        # Always include raw error details if available - the frontend can decide how to display
-        if exception:
-            result["raw_error"] = str(exception)
-
-        return result
 
     async def connect(self, silent=False):
         if self.connected:
@@ -105,32 +87,22 @@ class APIClient():
             # Check if the error message specifically mentions the model is not found
             error_str = str(e).lower()
             if "model" in error_str and ("not found" in error_str or "missing" in error_str):
-                self.manager.log_error("Model not found (400)", e)
-                return {"error": "model_not_found", **self._get_user_friendly_message("model_not_found", e)}
+                return APIError("Model not found.")
             else:
                 # It's a different kind of 400 error (e.g., invalid parameters)
-                self.manager.log_error("Bad request (400)", e)
-                return {"error": "api_error", **self._get_user_friendly_message("api_error", e)}
+                return APIError(f"Bad request", e)
 
         except openai.AuthenticationError as e:
             await self.disconnect()
-            error_info = self._get_user_friendly_message("auth_failed", e)
-            self._connection_error = error_info["message"]
-            self.manager.log("API", f"Authentication failed: {e}")
-            return False
+            return APIError("Authentication failed. Check if your API key is valid.", e)
 
         except openai.APIConnectionError as e:
             await self.disconnect()
-            error_info = self._get_user_friendly_message("connection_lost", e)
-            self._connection_error = error_info["message"]
-            self.manager.log("API", f"Connection failed: {e}")
-            return False
+            return APIError("Failed to connect to the API", e)
+
         except Exception as e:
             await self.disconnect()
-            error_info = self._get_user_friendly_message("unknown", e)
-            self._connection_error = error_info["message"]
-            self.manager.log("API", f"Unexpected connection error: {e}")
-            return False
+            return APIError("Unknown error while attempting to connect", e)
 
         self.connected = True
         self._connection_error = None
@@ -154,13 +126,8 @@ class APIClient():
 
         return {
             "connected": self.connected,
-            "error": self._connection_error,
             "url": api_config.get("url"),
-            "model": self._model,
-            "attempts": self._connection_attempts,
-            "url_configured": bool(api_config.get("url")),
-            "key_configured": bool(api_config.get("key")),
-            "model_configured": bool(model_config.get("name")),
+            "model": self._model
         }
 
     async def disconnect(self):
@@ -193,14 +160,19 @@ class APIClient():
         """send a request to the LLM and return the response object"""
 
         if not context:
-            # wtf just swallow it
-            return {"error": "blank_request", "message": "tried to send a blank request for some reason"}
+            # this should never happen..
+            # so if it does, always print a traceback, since it's bad news!
+            import traceback
+            traceback.print_stack()
+
+            return APIError("Tried to send a blank request for some reason! This should NEVER happen. Notify the developer.")
 
         if not self.connected:
             # attempt to connect
             connected = await self.connect(silent=True)
-            if not connected:
-                return {"error": "not_connected", "message": self._connection_error}
+            if connected is not True:
+                # thats an error
+                return connected
 
         if not core.config.get("model", {}).get("use_tools"):
             # allow switching tools off globally
@@ -319,43 +291,31 @@ class APIClient():
             # Check if the error message specifically mentions the model is not found
             error_str = str(e).lower()
             if "model" in error_str and ("not found" in error_str or "missing" in error_str):
-                self.manager.log_error("Model not found (400)", e)
-                return {"error": "model_not_found", **self._get_user_friendly_message("model_not_found", e)}
+                return APIError("Model with that name does not exist!", e)
             else:
                 # It's a different kind of 400 error (e.g., invalid parameters)
-                self.manager.log_error("Bad request (400)", e)
-                return {"error": "api_error", **self._get_user_friendly_message("api_error", e)}
+                return APIError("Bad request", e)
 
         except openai.AuthenticationError as e:
-            self.manager.log_error("Authentication error", e)
-            self.connected = False
-            error_info = self._get_user_friendly_message("auth_failed", e)
-            self._connection_error = error_info["message"]
-            return {"error": "auth_failed", **error_info}
+            await self.disconnect()
+            return APIError("Authentication failed. Check whether your API key is valid!", e)
 
         except openai.APIConnectionError as e:
-            self.manager.log_error("Connection error", e)
-            self.connected = False
-            error_info = self._get_user_friendly_message("connection_lost", e)
-            self._connection_error = error_info["message"]
-            return {"error": "connection_lost", **error_info}
+            await self.disconnect()
+            return APIError("Failed to connect to API")
 
         except openai.NotFoundError as e:
-            self.manager.log_error("Model not found", e)
-            return {"error": "model_not_found", **self._get_user_friendly_message("model_not_found", e)}
+            return APIError("Model with that name does not exist!", e)
 
         except openai.RateLimitError as e:
-            self.manager.log_error("Rate limit exceeded", e)
-            return {"error": "rate_limit", **self._get_user_friendly_message("rate_limit", e)}
+            return APIError("Rate limit exceeded", e)
 
         except openai.APIStatusError as e:
-            self.manager.log_error("API status error", e)
-            return {"error": "api_error", **self._get_user_friendly_message("api_error", e)}
+            return APIError("API Status Error",  e)
 
         except Exception as e:
-            self.manager.log_error("error while sending request to AI", e)
-            self.connected = False
-            return {"error": "unknown", **self._get_user_friendly_message("unknown", e)}
+            await self.disconnect()
+            return APIError("Unknown error while sending request to the API", e)
 
         finally:
             self.cancel_request = False
@@ -404,13 +364,14 @@ class APIClient():
         self.prompt_warming_up = True
 
         try:
-            if not context:
+            if context is None:
                 prompt = await self.manager.get_system_prompt()
                 context = [{"role": "system", "content": prompt}]
 
             response = await self._request(context, stream=True, tools=self.manager.tools, use_thinking=False, max_completion_tokens=1)
 
-            if isinstance(response, dict):
+            if isinstance(response, APIError):
+                self.manager.log("api", f"Failure while sending prompt warmup request to AI: {response}")
                 # thats an error
                 return
 
@@ -440,9 +401,16 @@ class APIClient():
             self._warmup_done.set()
 
     async def send(self, context: list, system_prompt=True, use_tools=True, tools=None, use_thinking=True, **kwargs):
-        """send a message to the LLM. returns a string or error dict"""
+        """send a message to the LLM. returns a string or APIError"""
 
         self.cancel_request = False
+
+        # attempt auto-reconnect once
+        if not self.connected:
+            reconnected = await self.connect()
+            if reconnected is not True:
+                # thats an error!
+                return reconnected
 
         # wait for the system prompt warmup to finish if it's still running
         if self._warmup_task and not self._warmup_task.done():
@@ -457,20 +425,27 @@ class APIClient():
         response = await self._request(context, tools=(tools if use_tools else None), use_thinking=use_thinking, **kwargs)
 
         # return errors if applicable
-        if isinstance(response, dict) and "error" in response:
-            return response
+        if isinstance(response, APIError):
+            return str(response)
 
         try:
             result = await self._recv(response)
             return result
         except Exception as e:
-            self.manager.log_error("error while processing response from AI", e)
-            return {"error": "processing_failed", **self._get_user_friendly_message("processing_failed", e)}
+            return APIError("While processing response from AI", e)
 
     async def send_stream(self, context: list, use_tools=True, tools=None, use_thinking=True, **kwargs):
         """send a message to the LLM. is an iterable async generator"""
 
         self.cancel_request = False
+
+        # attempt auto-reconnect once
+        if not self.connected:
+            reconnected = await self.connect()
+            if reconnected is not True:
+                # that's an error
+                yield {"type": "error", "content": str(reconnected)}
+                return
 
         # drain progress tokens while waiting for warmup to finish
         # so that warmup progress can be shown in channels
@@ -497,8 +472,8 @@ class APIClient():
         response = await self._request(context, tools=(tools if use_tools else None), stream=True, use_thinking=use_thinking, **kwargs)
 
         # return errors if applicable
-        if isinstance(response, dict):
-            yield response
+        if isinstance(response, APIError):
+            yield {"type": "error", "content": str(response)}
             return
 
         try:
@@ -514,7 +489,7 @@ class APIClient():
                 yield token
         except Exception as e:
             self.manager.log_error("error while sending request to AI", e)
-            yield {"type": "error", "content": {"error": "stream_failed", **self._get_user_friendly_message("processing_failed", e)}}
+            yield {"type": "error", "content": f"While sending request to AI: {core.detail_error(e)}"}
 
     async def cancel(self):
         """cancel a request that's been sent to the AI"""
@@ -530,8 +505,7 @@ class APIClient():
             # normal non-streaming mode
             response_main = response.choices[0]
         except Exception as e:
-            #self.manager.log_error("error while receiving response from AI", e)
-            return {"error": "invalid_response", "message": self._get_user_friendly_message("invalid_response", e)}
+            raise e # raise it so send() can catch it
 
         reasoning_content = getattr(response_main.message, "reasoning_content", None) or \
                             getattr(response_main.message, "reasoning", None) or ""
@@ -598,7 +572,6 @@ class APIClient():
                 current_time = time.time()
                 delta_ms = (current_time - last_token_time) * 1000
                 last_token_time = current_time
-
 
                 if chunk.choices:
                     streamed_token = chunk.choices[0].delta

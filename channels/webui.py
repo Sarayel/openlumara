@@ -721,8 +721,12 @@ async def api_status(user: str = Depends(require_auth)):
 async def api_reconnect(user: str = Depends(require_auth)):
     if not channel_instance:
         raise HTTPException(status_code=500, detail="Channel not available")
-    result = await channel_instance.manager.reconnect_api()
-    return result
+    result = await channel_instance.manager.API.reconnect()
+    
+    if isinstance(result, core.api.APIError):
+        return {"success": False, "error": str(result)}
+
+    return {"success": True, "message": "Successfully connected to the API"}
 
 @app.post("/api/disconnect")
 async def api_disconnect(user: str = Depends(require_auth)):
@@ -824,10 +828,7 @@ async def start_ai_stream_task(chat_id: str, payload_body: dict):
                     return
 
                 if isinstance(token_data, dict):
-                    if token_data.get('type') == 'error':
-                        yield token_data
-                        return
-                    elif token_data.get("type") == "user_message":
+                    if token_data.get("type") == "user_message":
                         try:
                             user_msg_payload = token_data.copy()
                             user_msg_payload['index'] = next_index
@@ -838,6 +839,14 @@ async def start_ai_stream_task(chat_id: str, payload_body: dict):
                             })
                         except Exception as e:
                             channel_instance.log("webui", f"error while sending user message: {core.detail_error(e)}")
+                    elif token_data.get('type') == 'error':
+                        await manager.broadcast({
+                            "type": "user_message_confirmed",
+                            "index": next_index
+                        })
+
+                        yield token_data
+                        return
 
                     # AS SOON AS FIRST TOKEN ARRIVES: Confirm the user message to remove 'sending...'
                     # We use the index we calculated earlier

@@ -24,7 +24,11 @@ class Context:
         """
 
         if not self.channel.manager.API.connected:
-            return None
+            # attempt to connect
+            result = await self.channel.manager.API.connect()
+            if result is not True:
+                self.channel.log("api", str(result))
+                return result
 
         # Configuration
         max_messages = int(core.config.get("api").get("max_messages", 200))

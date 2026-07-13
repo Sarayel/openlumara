@@ -5,6 +5,11 @@
     padding: 12px;
 }
 
+.api-error-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
 .api-error-footer {
     margin-top: 12px;
     display: flex;

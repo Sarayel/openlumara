@@ -17,7 +17,7 @@ class Manager:
     def __init__(self, cmdline_args):
         self._async_tasks = set()
         self.args = cmdline_args # store commandline args
-        self.API = core.api_client.APIClient(self) # connect later with .connect()
+        self.API = core.api.APIClient(self) # connect later with .connect()
         self.savedata = {}
 
         self.channels = {}
@@ -252,7 +252,12 @@ class Manager:
             self._async_tasks.add(asyncio.create_task(channel._start_push_queue()))
 
         # Attempt API connection but don't fail if it doesn't work
-        await self._initialize_api_connection()
+        """Initialize API connection"""
+        self.log("API", "Connecting..")
+
+        connected = await self.API.connect()
+        if isinstance(connected, core.api.APIError):
+            self.log("API", str(connected))
 
         # run everything
         self.log("core", "Startup complete")
@@ -428,36 +433,6 @@ class Manager:
         await self.load_module_tools(module)
 
         return True
-
-    async def _initialize_api_connection(self):
-        """Initialize API connection with user-friendly error handling."""
-        self.log("API", "Connecting to AI..")
-
-        connected = await self.API.connect()
-        if not connected:
-            self.log("API", "Failed to connect to AI. Perhaps you haven't set it up yet? Make sure to set up your API URL in the settings.")
-
-    async def reconnect_api(self):
-        """Manually trigger API reconnection. Returns status dict."""
-        self.log("API", "Attempting to reconnect...")
-
-        connected = await self.API.reconnect()
-        if connected:
-            return {
-                "success": True,
-                "message": "Successfully connected to API"
-            }
-        else:
-            error = self.API.get_last_error() or "Unknown error"
-            return {
-                "success": False,
-                "error": error,
-                "action": "Please check your API settings and try again."
-            }
-
-    def get_api_status(self):
-        """Get current API connection status for display."""
-        return self.API.get_connection_status()
 
     async def get_system_prompt(self):
         # only run on_system_prompt if the manager has a channel reference

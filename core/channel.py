@@ -259,12 +259,6 @@ class Channel:
 
         # if not a command, send the message to the AI and return it's response
 
-        # attempt auto-reconnect once
-        if not self.manager.API.connected:
-            reconnected = await self.manager.API.connect()
-            if not reconnected:
-                return {"role": "assistant", "content": self._get_disconnection_message()}
-
         # run module event hooks
         usr_msg_result = None
         for module_name, module in self.manager.modules.items():
@@ -299,10 +293,10 @@ class Channel:
         response = await self.manager.API.send(context)
 
         # handle any errors
-        if isinstance(response, dict) and "error" in response:
+        if isinstance(response, core.api.APIError):
             await self.context.chat.pop()  # remove the user message we just added
-            error_msg = response.get("message", "Unknown error occurred")
-            return {"role": "assistant", "content": f"API Error: {error_msg}\n\nUse /connect to retry."}
+            self.log("api", response)
+            return {"role": "assistant", "content": str(response)}
 
         # make a copy of the response message and edit it
         assistant_message = dict(response)
@@ -366,6 +360,12 @@ class Channel:
             )
 
             if is_cmd and message.get("role", "user") == "user":
+                # immediately yield the user's message for display in frontend channels
+                yield {"type": "user_message", "content": user_message.get("content")}
+                # and add to context
+                await self.context.chat.add({"role": "user", "content": user_message.get("content")})
+
+                # then process
                 try:
                     cmd_response = await self.commands.process_input(user_message, authorized=commands_authorized)
                 except Exception as e:
@@ -377,16 +377,12 @@ class Channel:
                     # insert and return the command response without sending it to the AI
                     for word in cmd_response:
                         yield {"type": "content", "content": word}
+                    await self.context.chat.add({"role": "user", "content": cmd_response})
+
                     return
 
-        # attempt auto-reconnect once
-        if not self.manager.API.connected:
-            reconnected = await self.manager.API.connect()
-            if not reconnected:
-                yield {"type": "content", "content": self._get_disconnection_message()}
-                return
-
         # run user message module event hooks
+        # before we even send to the API, so that we can immediately yield the message for display in frontend channels
         usr_msg_result = None
         for module_name, module in self.manager.modules.items():
             if hasattr(module, "on_user_message"):
@@ -407,13 +403,13 @@ class Channel:
                     # allow modifying user message by returning the modified message as a string
                     user_message['content'] = usr_msg_result
 
+        # yield user message as a special token for display in UI's (because user message can be modified by module hooks)
+        yield {"type": "user_message", "content": user_message.get("content")}
+
         # add user's message to context
         add_success = await self.context.chat.add(user_message)
         if not add_success:
             return
-
-        # yield user message as a special token for display in UI's (because user message can be modified by module hooks)
-        yield {"type": "user_message", "content": user_message.get("content")}
 
         # estimate tokens used for user message
         user_message_token_estimation = 0
@@ -454,9 +450,8 @@ class Channel:
 
             # handle any errors
             if token_type == "error":
-                error_data = token.get("content", {})
-                error_msg = error_data.get("message", "Unknown error")
-                yield {"type": "content", "content": f"API Error: {error_msg}"}
+                self.log("api", f"Error: {token.get('content')}")
+                yield token
                 return
 
             if token_type == "content":

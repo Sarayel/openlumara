@@ -30,6 +30,6 @@ import core.chat
 import core.channel
 
 import core.modules
-import core.api_client
+import core.api
 
 import core.manager

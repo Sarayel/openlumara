@@ -402,20 +402,17 @@ class Commands:
                     return "Already connected."
 
                 result = await self.channel.manager.API.connect()
-                if not result:
-                    return f"error connecting to API: {self.channel.manager.API.get_last_error()}"
+                if isinstance(result, core.api.APIError):
+                    return f"Error while connecting: {result}"
 
-                return "✓ Connected!"
+                return "Connected!"
             case "reconnect":
-                    result = await self.channel.manager.reconnect_api()
+                    result = await self.channel.manager.API.reconnect()
 
-                    if result["success"]:
-                        return f"✓ {result['message']}"
-                    else:
-                        response = f"✗ Connection failed: {result['error']}"
-                        if "action" in result:
-                            response += f"\n{result['action']}"
-                        return response
+                    if isinstance(result, core.api.APIError):
+                        return f"Error while reconnecting: {result}"
+
+                    return "Reconnected"
             case "disconnect":
                 await self.channel.manager.API.disconnect()
                 return "Disconnected from API"

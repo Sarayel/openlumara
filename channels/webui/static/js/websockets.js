@@ -67,15 +67,6 @@ function connectWebSocket() {
         wsReconnecting = false;
         showConnectionStatus('reconnected');
 
-        // sync back up with the backend
-        try {
-            wsSocket.send(JSON.stringify({
-                type: 'reload_messages'
-            }));
-        } catch (e) {
-            console.warn('Failed to send message reload request:', e);
-        }
-
         // Drain any queued messages
         drainSendQueue();
     };
@@ -202,10 +193,50 @@ function processToken(msg, isSimulated = false) {
         return;
     }
 
+    // Handle errors from the backend
+    if (type === 'error') {
+        clearProcessingIndicators();
+        if (fancyProcessingIndicator) {
+            fancyProcessingIndicator.remove();
+        }
+
+        // Create AI wrapper if it doesn't exist
+        if (!window._currentAiWrapper) {
+            createAiWrapper();
+        }
+
+        // Show the error in the AI message div
+        const errorMsg = typeof content === 'string' ? content : (content?.content || 'An unknown error occurred');
+        window._currentAiMsgDiv.innerHTML = `
+        <div class="api-error-inline">
+        <div class="api-error-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span class="api-error-title">Error</span>
+        </div>
+        <div class="api-error-message">${escapeHtml(errorMsg)}</div>
+        <div class="api-error-footer">
+        <div class="api-error-action">Try regenerating or check your API settings.</div>
+        </div>
+        </div>`;
+
+        // Finalize the stream so the wrapper gets proper action buttons
+        if (window._currentAiWrapper) {
+            finalizeStreamingUI(window._currentAiWrapper, window._currentAiMsgDiv);
+        }
+        return;
+    }
+
     if (!window._currentAiMsgDiv) {
         createAiWrapper();
     } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
-        chat.insertBefore(window._currentAiWrapper, typing);
+        insertBeforeTyping(window._currentAiWrapper);
+    }
+
+    // Hide typing indicator when first token arrives (in case prompt_progress was skipped)
+    if (!fancyProcessingIndicatorCreated) {
+        typing.classList.remove('show');
     }
 
     if (!responseStartSoundPlayed) {
@@ -435,7 +466,7 @@ function handleWebSocketMessage(data) {
             if (!window._currentAiMsgDiv) {
                 createAiWrapper();
             } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
-                chat.insertBefore(window._currentAiWrapper, typing);
+                insertBeforeTyping(window._currentAiWrapper);
             }
         }
 
@@ -465,15 +496,15 @@ function handleWebSocketMessage(data) {
         if (window._currentAiWrapper) {
             window._currentAiWrapper.dataset.index = data.index;
 
+            // Capture wrapper refs in closure to avoid race conditions
+            const savedWrapper = window._currentAiWrapper;
+            const savedMsgDiv = window._currentAiMsgDiv;
+
             if (typeof isTypewriterRunning === 'undefined' || !isTypewriterRunning) {
-                if (window._currentAiWrapper) {
-                    finalizeStreamingUI(window._currentAiWrapper, window._currentAiMsgDiv);
-                }
+                finalizeStreamingUI(savedWrapper, savedMsgDiv);
             } else {
                 waitForTypewriter().then(() => {
-                    if (window._currentAiWrapper) {
-                        finalizeStreamingUI(window._currentAiWrapper, window._currentAiMsgDiv);
-                    }
+                    finalizeStreamingUI(savedWrapper, savedMsgDiv);
                 });
             }
             window._streamInitialized = false;
@@ -483,6 +514,13 @@ function handleWebSocketMessage(data) {
     }
 
     if (data.type === 'messages_updated') {
+        // Don't re-render during active streaming - it wipes out the streaming wrapper
+        if (isStreaming && !catchingUpFromBuffer) {
+            // Just clear stale wrapper refs without re-rendering
+            window._currentAiWrapper = null;
+            window._currentAiMsgDiv = null;
+            return;
+        }
         try {
             renderAllMessages(data.messages, false);
 
@@ -491,29 +529,6 @@ function handleWebSocketMessage(data) {
                 // so any existing wrapper references are stale.
                 // This ensures a new AI wrapper is created when streaming starts
                 // (e.g., during message regeneration).
-
-                // thanks Qwen, your comments are kinda verbose though
-                // imagine commenting on your AI's comments in your code
-                // hi potential readers of the code, you enjoying this?
-                // im starting to learn more and more javascript and
-                // hope to get the webUI to be more and more manually coded
-                // as it is the one part of openlumara that's 90% AI generated
-                // which im definitely not happy about
-
-                // also it's way too hot here right now
-                // did you know 2026 had a really bad heatwave? yup.
-                // hows your day, reader? i know you cant talk back but like,
-                // imagine if someone actually read this code and found it and
-                // talked to me about it. that would be funny lol
-
-                // it's hard to focus in this heat
-                // i'll probably look back on this code after the heatwave is over
-                // and be like... WTF Rose
-                // but like whatever
-
-                // all AI-assisted code in openlumara is done by local models btw
-                // barely any reliance on cloud API coding except for the initial draft of the webUI
-                // which was done by GLM-5 on NanoGPT
                 window._currentAiWrapper = null;
                 window._currentAiMsgDiv = null;
             }
@@ -637,7 +652,7 @@ function showConnectionStatus(status) {
     }
 
     statusMessageElement = wrapper;
-    chat.insertBefore(wrapper, typing);
+    insertBeforeTyping(wrapper);
     scrollToBottom();
 }
 

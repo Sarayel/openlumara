@@ -307,9 +307,6 @@ async function finalizeStreamingUI(aiWrapper, aiMsgDiv) {
     }
     typing.style.display = '';
 
-    // Reset stream state AFTER UI is finalized
-    resetStreamState();
-
     // prevents duplicate sounds when typewriter is enabled
     const typewriterEnabled = localStorage.getItem("typewriterEnabled") === 'true';
     if (!typewriterEnabled) {
@@ -325,6 +322,9 @@ async function finalizeStreamingUI(aiWrapper, aiMsgDiv) {
     displayedContent = '';
     isTypewriterRunning = false;
     inputField.focus();
+
+    // Reset stream state AFTER everything else is done
+    resetStreamState();
 }
 
 function startStreamingUI(aiWrapper, typingIndicator) {
@@ -338,7 +338,6 @@ function startStreamingUI(aiWrapper, typingIndicator) {
 function finishStream() {
     removePlaceholder();
     clearStreamingToolCalls();
-    resetStreamState();
 
     // Clean up separate fancy processing indicator
     if (fancyProcessingIndicator) {
@@ -356,6 +355,8 @@ function finishStream() {
     displayedContent = '';
     isTypewriterRunning = false;
     inputField.focus();
+
+    resetStreamState();
 }
 
 // =============================================================================

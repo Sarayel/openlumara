@@ -232,7 +232,7 @@ function showChatError(message, errorType = null, action = null, rawError = null
     errorWrapper.innerHTML = errorHtml;
 
     chatErrorElement = errorWrapper; // Store reference to allow removal
-    chat.insertBefore(errorWrapper, typing);
+    insertBeforeTyping(errorWrapper);
     scrollToBottom();
 }
 

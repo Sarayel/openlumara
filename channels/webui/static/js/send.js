@@ -76,7 +76,6 @@ async function send(providedContent = null) {
 
     let playedCompletionSound = false;
 
-    let streamHadError = false;
     let streamStarted = false;
 
     const typewriterEnabled = localStorage.getItem("typewriterEnabled") === 'true';

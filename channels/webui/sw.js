@@ -2,8 +2,7 @@ const CACHE_NAME = 'openlumara-{{VERSION}}';
 
 // Assets to precache (these get versioned by the backend)
 const ASSETS_TO_CACHE = [
-    '/index.html',
-    '/static',
+    {{FILE_LIST}},
     '/manifest.json',
     '/icon-192.png',
     '/icon-512.png',

@@ -1752,12 +1752,31 @@ async def manifest():
 
 @app.get('/sw.js')
 async def service_worker():
-    """Serve service worker with injected version."""
-    with open(core.get_path("channels/webui/sw.js")) as f:
+    base_path = core.get_path("channels/webui")
+    static_base = os.path.join(base_path, 'static')
+
+    files_to_cache = []
+    for subdir in ['js', 'css']:
+        dir_path = os.path.join(static_base, subdir)
+        if os.path.isdir(dir_path):
+            for root, _, files in os.walk(dir_path):
+                for filename in files:
+                    full_path = os.path.join(root, filename)
+                    rel_path = os.path.relpath(full_path, static_base)
+                    files_to_cache.append('/static/' + rel_path)
+    files_to_cache.sort()
+
+    sw_template_path = os.path.join(base_path, 'sw.js')
+    with open(sw_template_path) as f:
         sw_code = f.read()
 
-    # Inject version into the file
-    sw_code = sw_code.replace('{{VERSION}}', generate_cache_version())
+    version = generate_cache_version()
+
+    file_list = ',\n    '.join(f'"{f}"' for f in files_to_cache)
+    sw_code = sw_code.replace('{{VERSION}}', version)
+    sw_code = sw_code.replace('{{FILE_LIST}}', f'{file_list}\n')
+
+    print(sw_code)
 
     return Response(
         content=sw_code,

@@ -323,7 +323,6 @@ async function processToken(msg, isSimulated = false) {
         clearProcessingIndicators();
 
         finalizeStreamingToolCalls(msg.tool_calls || [], window._currentAiMsgDiv);
-        TypewriterAudioManager.stopProcessingSound();
         updateStopButtonState();
         return;
     }
@@ -593,7 +592,7 @@ function handleNewMessage(msg) {
     if (!msg || msg.index === undefined) return;
     if (msg.index < lastMessageIndex) return;
 
-    msgEl = renderSingleMessage(msg, msg.index, true);
+    let msgEl = renderSingleMessage(msg, msg.index, true);
 
     if (msg.role !== 'user') {
         TypewriterAudioManager.play('response_start');

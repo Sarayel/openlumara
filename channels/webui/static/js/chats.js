@@ -1041,7 +1041,6 @@ async function deleteChat(chatId) {
     if (!confirm('Delete this chat?')) return;
 
     const chatItem = document.querySelector(`[data-chat-id="${chatId}"]`);
-    if (chatItem) chatItem.remove();
 
     if (window.socket && window.socket.readyState === WebSocket.OPEN) {
         window.socket.send(JSON.stringify({
@@ -1210,7 +1209,7 @@ async function renameChat(chatId, currentTitle) {
                 }
         }, 100);
     };
-}2
+}
 
 // =============================================================================
 // Chat Title Bar Management
@@ -1474,25 +1473,4 @@ async function clearChat() {
     } catch (err) {
         console.error('Failed to clear chat:', err);
     }
-}
-
-
-
-
-function escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\$&');
-}
-
-function formatDate(timestamp) {
-    if (!timestamp) return '';
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now - date;
-
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
-    if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
-    if (diff < 604800000) return Math.floor(diff / 86400000) + 'd ago';
-
-    return date.toLocaleDateString();
 }

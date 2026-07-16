@@ -187,6 +187,43 @@ function processToken(msg, isSimulated = false) {
     const type = msg.type || 'content';
     const content = msg.content || '';
 
+    // Handle errors from the backend
+    if (type === 'error') {
+        console.log(msg)
+
+        clearProcessingIndicators();
+        if (fancyProcessingIndicator) {
+            fancyProcessingIndicator.remove();
+        }
+
+        // Create AI wrapper if it doesn't exist
+        if (!window._currentAiMsgDiv) {
+            createAiWrapper();
+        } else if (window._currentAiWrapper && !window._currentAiWrapper.parentNode) {
+            chat.insertBefore(window._currentAiWrapper, typing);
+        }
+
+        // Show the error in the AI message div
+        console.log(msg);
+
+        window._currentAiMsgDiv.innerHTML = `
+        <div class="api-error-inline">
+        <div class="api-error-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span class="api-error-title">API Error</span>
+        </div>
+        <div class="api-error-message">${content}</div>
+        </div>`;
+
+        // Finalize the stream so the wrapper gets proper action buttons
+        // if (window._currentAiWrapper) {
+        //     finalizeStreamingUI(window._currentAiWrapper, window._currentAiMsgDiv);
+        // }
+        return;
+    }
+
     // show ongoing prompt processing progress
     if (type === 'prompt_progress') {
         handlePromptProgress(content);
@@ -552,11 +589,6 @@ function handleWebSocketMessage(data) {
         // show system logs
         closeModal('settings');
         showModal('log', true);
-    }
-
-    if (data.type === 'error') {
-        handleServerError(data.error);
-        return;
     }
 }
 

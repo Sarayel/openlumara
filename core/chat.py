@@ -5,6 +5,8 @@ import os
 
 import tiktoken
 
+# TODO: split chat index from messages array into two seperate files, to vastly improve speed when saving/loading chats
+
 class Chat:
     DEFAULT_DATA = {
         "title": "",
@@ -49,7 +51,7 @@ class Chat:
                 if target_index < len(self.data):
                     self.current = target_index
             except Exception as e:
-                core.log_error("couldn't autoresume chat", e)
+                self.channel.log_error("couldn't autoresume chat", e)
 
     def _is_command_only(self, messages):
         """Check if a messages array contains only user commands and command responses"""
@@ -95,8 +97,9 @@ class Chat:
         """create a new chat"""
         now = datetime.datetime.utcnow().isoformat()
 
+        new_id = str(ulid.ULID())[-8:] # so it turns out truncating the ULID from the front can lead to identical id's.. yikes
         self.data.append({
-            "id": str(ulid.ULID())[:8],
+            "id":  new_id,
             "title": title,
             "category": category,
             "tags": [],
@@ -111,8 +114,14 @@ class Chat:
         await self.set_token_usage(0)
         self.using_api_token_data = False
 
-        self.data.save()
-        return True
+        # don't immediately save, to avoid lag when creating a new chat
+        # handle saving later on
+        #self.data.save()
+
+        # start a system prompt warmup so that the response is instant (if the user types slowly... lol)
+        #await self.channel.manager.API.start_prompt_warmup(notify=core.debug)
+
+        return new_id
     async def clear(self):
         if self.current is None:
             return False
@@ -126,7 +135,11 @@ class Chat:
         
         await self.save()
 
+        # start a system prompt warmup so that the response is instant (if the user types slowly... lol)
+        #await self.channel.manager.API.start_prompt_warmup(notify=core.debug)
+
         return True
+
     async def delete(self, id: str):
         """delete an entire chat"""
 
@@ -139,12 +152,19 @@ class Chat:
         self.data.save()
 
         # Adjust current index if needed
-        if self.current == index:
-            # Deleted the current chat - reset or move to previous
-            self._set_current(min(index, len(self.data) - 1) if self.data else None)
-        elif self.current > index:
-            # Current was after deleted item, shift down
-            self.current -= 1
+        if self.current is not None:
+            if self.current == index:
+                # Deleted the current chat - reset or move to previous
+                self._set_current(min(index, len(self.data) - 1) if self.data else None)
+            elif self.current > index:
+                # Current was after deleted item, shift down
+                self.current -= 1
+
+        # start a prompt warmup using this chat's data
+        # try:
+        #     await self.channel.manager.API.start_prompt_warmup(context=await self.channel.context.get(), notify=core.debug)
+        # except Exception as e:
+        #     self.channel.log("core", f"failure while sending prompt warmup to API: {core.detail_error(e)}")
 
         return self.current
 
@@ -153,13 +173,20 @@ class Chat:
             await self.new()
 
         return self.data.save()
+
     async def load(self, id: str):
         index = self._find_index(id)
 
-        if index is None:
+        if index is None or self.current == index:
             return False
 
         self._set_current(index)
+
+        # start a prompt warmup using this chat's data
+        # try:
+        #     await self.channel.manager.API.start_prompt_warmup(context=await self.channel.context.get(), notify=core.debug)
+        # except Exception as e:
+        #     self.channel.log("core", f"failure while sending prompt warmup to API: {core.detail_error(e)}")
 
         return True
 
@@ -196,7 +223,6 @@ class Chat:
         for chat in self.data:
             if chat.get("category") not in collected_categories:
                 collected_categories.append(chat.get("category"))
-            continue
         return collected_categories
 
     async def get_data(self, data_key: str = None):
@@ -252,18 +278,130 @@ class Chat:
 
         return False
 
-    async def get(self):
-        """get message history of current chat"""
+    async def get_chat(self):
+        """
+        gets the entire current chat. this is why i need to split the messages into a seperate object... this is getting confusing
+        unfortunately i need to finish work on the webui first before i improve chat.py, because
+        a lot of stuff across the framework depends on the chat class
+        and so, will break all over the place if i remove .get() in favor of .messages.get()
+        """
         if self.current is None:
-            return None
+            await self.new()
 
-        return self.data[self.current].get("messages", [])
+        return self.data[self.current]
 
     async def get_id(self):
         if self.current is None:
-            return None
+            return await self.new()
 
         return self.data[self.current].get("id", None)
+
+    # ----------------------------
+    # new, more sane method names
+    # just aliases for now
+    # as a final structure i want chat.messages.add, chat.messages.edit, and so on,
+    # but there's no time right now
+    # ----------------------------
+    async def get_messages(self):
+        return await self.get()
+
+    async def set_messages(self, messages):
+        return await self.set(messages)
+
+    async def get_message(self, index: int):
+        if not self.current:
+            await self.new()
+
+        messages = self.data[self.current]["messages"]
+
+        if index > len(messages):
+            return None
+
+        return messages[index]
+
+    async def add_message(self, message: dict, cmd=False, ghost = False):
+        return await self.add(message, cmd=cmd, ghost=ghost)
+
+    async def edit_message(self, index, message: dict):
+        return self.edit(index, message)
+
+    async def delete_message(self, index):
+        return self.pop(index)
+
+    async def delete_all_messages_after(self, index):
+        return await self.delete_from(index)
+
+    async def get_last_message_with_role(self, role: str, cutoff_index: int = None):
+        if not self.current:
+            return False
+
+        # get last message by that role
+        messages = await self.get()
+
+        # if we have a "cutoff index",
+        # it means we have to search backwards
+        # from that index
+        # which is very useful for, say,
+        # regenerating a message
+        # because we can target the last user message
+        # before the cutoff index
+
+        if len(messages) == 1:
+            # just return the first index
+            return 0
+
+        if cutoff_index is not None:
+            start_index = cutoff_index
+        else:
+            # Start at the very end
+            start_index = len(messages)
+
+        for index in range(start_index, -1, -1):
+            if index >= len(messages):
+                continue
+
+            message = messages[index]
+            if message.get("role") == role:
+                return index
+
+        return -1
+
+    # ----------------------------------------------------------------------------
+    # OLD, DEPRECATED METHODS BELOW
+    # ----------------------------------------------------------------------------
+    # these all apply to messages, not the chat itself,
+    # and yet i named them in a way where it's really confusing whether you're
+    # interacting with a chat or with the messages
+    # so i'm keeping these for now, to maintain compatibility
+    # with user modules and some parts of the framework,
+    # but i plan to slowly migrate to more sane names
+    # ----------------------------------------------------------------------------
+
+    async def get(self, index = None):
+        """get message history of current chat"""
+        if self.current is None:
+            await self.new()
+
+        messages = self.data[self.current].get("messages", [])
+
+        return messages
+
+    async def delete_from(self, index: int):
+        """
+        Deletes all messages below a certain index
+        """
+        if self.current is None:
+            return False
+
+        messages = await self.get()
+        if not messages:
+            return False
+
+        # return all messages up to and including the target message
+        new_messages = messages[:index+1]
+
+        await self.set(new_messages)
+        return True
 
     async def set(self, messages: list):
         """overwrite message history of current chat"""
@@ -274,29 +412,13 @@ class Chat:
         await self.save()
         return True
 
-    async def add(self, message: dict, ghost = False):
+    async def add(self, message: dict, cmd=False, ghost = False):
         """add message to current chat"""
         if self.current is None:
             await self.new()
 
         # make a copy so we don't modify the original reference
         new_message = message.copy()
-
-        # ensure message does not exceed token limits
-        max_tokens = int(core.config.get("api").get("max_context", 8192))
-        
-        # create a potential new message list to check token count
-        current_messages = self.data[self.current].get("messages", [])
-        potential_messages = list(current_messages)
-
-        potential_messages.append(new_message)
-        
-        # calculate tokens for this potential list
-        new_token_count = await self.count_tokens(messages=potential_messages)
-
-        if new_token_count > max_tokens:
-            await self.channel.push(f"Your request exceeds the token limit! It was {new_token_count} out of {max_tokens} tokens.")
-            return False
 
         if not self.data[self.current]["title"].strip():
             # auto-set title
@@ -312,11 +434,40 @@ class Chat:
         if ghost:
             new_message["ghost"] = True
 
+        if cmd:
+            # if the message is a command (or command response), mark it as such
+            new_message["is_cmd"] = True
+
+        # inject any special messages coming from on_message_inject() in modules, such as timestamps
+        injections = []
+        for module_name, module in self.channel.manager.modules.items():
+            if hasattr(module, 'on_message_inject'):
+                try:
+                    injection = await module.on_message_inject()
+                    if injection:
+                        injections.append(injection)
+                except Exception as e:
+                    self.channel.log("module error", f"{module.name}: in on_message_inject(): {core.detail_error(e)}")
+
+        if injections:
+            new_message["injection"] = "\n\n".join(injections)
+
         self.data[self.current]["messages"].append(new_message)
 
         index = len(self.data[self.current]["messages"]) - 1
         await self.save()
         return True
+
+    async def edit(self, index: int, message):
+        """edit message by its index"""
+        if self.current is None:
+            return False
+
+        if index >= len(self.data[self.current]["messages"]):
+            return False
+
+        self.data[self.current]["messages"][index] = message
+        await self.save()
 
     async def pop(self, index: int = None):
         """pop message from current chat"""
@@ -368,7 +519,8 @@ class Chat:
         """
         num_tokens = 0
         _messages = messages or await self.channel.context.get(system_prompt=True, end_prompt=True)
-        if not _messages:
+
+        if not _messages or isinstance(_messages, core.api.APIError):
             return 0
 
         # only set the tiktoken encoder if the model changed
@@ -386,7 +538,7 @@ class Chat:
                 # If tiktoken fails to load (e.g. no internet and no cache), we set to None
                 # _count_text_tokens then uses a character-based fallback
                 self.token_encoding = None
-                core.log_error("[TIKTOKEN] Falling back on character-based token counting.", e)
+                self.channel.log_error("[TIKTOKEN] Falling back on character-based token counting.", e)
                 pass
 
         for message in _messages:
@@ -414,6 +566,28 @@ class Chat:
             # Count reasoning content if present
             if "reasoning_content" in message and isinstance(message["reasoning_content"], str):
                 num_tokens += self._count_text_tokens(message["reasoning_content"])
+
+            # Count tool calls if present (in assistant messages)
+            if "tool_calls" in message and isinstance(message["tool_calls"], list):
+                for tool_call in message["tool_calls"]:
+                    if isinstance(tool_call, dict):
+                        # Count the call ID
+                        if "id" in tool_call and isinstance(tool_call["id"], str):
+                            num_tokens += self._count_text_tokens(tool_call["id"])
+                        # Count the type
+                        if "type" in tool_call and isinstance(tool_call["type"], str):
+                            num_tokens += self._count_text_tokens(tool_call["type"])
+                        # Count the function name and arguments
+                        if "function" in tool_call and isinstance(tool_call["function"], dict):
+                            function = tool_call["function"]
+                            if "name" in function and isinstance(function["name"], str):
+                                num_tokens += self._count_text_tokens(function["name"])
+                            if "arguments" in function and isinstance(function["arguments"], str):
+                                num_tokens += self._count_text_tokens(function["arguments"])
+
+            # Count tool_call_id if present (in tool result messages)
+            if "tool_call_id" in message and isinstance(message["tool_call_id"], str):
+                num_tokens += self._count_text_tokens(message["tool_call_id"])
 
         # Add 1 token for final assistant priming (conservative)
         num_tokens += 1

@@ -12,6 +12,8 @@ class Telegram(core.channel.Channel):
     """Talk to your AI over Telegram"""
     running = False
 
+    dependencies = ["python-telegram-bot"]
+
     settings =  {
         "token": "TOKEN_HERE",
         "use_message_streaming": True,
@@ -40,9 +42,9 @@ class Telegram(core.channel.Channel):
         if stored_id and stored_id.strip():
             try:
                 self.authorized_chat_id = int(stored_id)
-                core.log("telegram", f"Restored authorized chat ID: {self.authorized_chat_id}")
+                self.log("telegram", f"Restored authorized chat ID: {self.authorized_chat_id}")
             except ValueError:
-                core.log("telegram", "Failed to parse stored chat ID.")
+                self.log("telegram", "Failed to parse stored chat ID.")
 
         self._shutting_down = False
 
@@ -75,7 +77,7 @@ class Telegram(core.channel.Channel):
                 await asyncio.sleep(1)
 
         except Exception as e:
-            core.log("telegram", f"Critical Error: {str(e)}")
+            self.log("telegram", f"Critical Error: {str(e)}")
             return False
         finally:
             # Clean up the queue task
@@ -107,7 +109,7 @@ class Telegram(core.channel.Channel):
             self.authorized_chat_id = chat_id
             self.auth_storage.set(str(chat_id))
             await update.message.reply_text("✅ Session started.\n")
-            core.log("telegram", f"Authorized chat ID: {chat_id}")
+            self.log("telegram", f"Authorized chat ID: {chat_id}")
         elif self.authorized_chat_id != chat_id:
             await update.message.reply_text("⚠️ This bot is already in use.")
 
@@ -161,14 +163,14 @@ class Telegram(core.channel.Channel):
                         # Process the message (this waits for the stream to finish)
                         await self._process_stream(update, context)
                     else:
-                        response = await self.send({"role": "user", "content": user_msg})
+                        response = await self.send({"role": "user", "content": user_msg}, commands_authorized=True)
                         if response:
                             content = response.get("content")
                             if content:
                                 # send message to telegram
                                 await self._send_chunked_message(context.bot, chat_id, content)
                 except Exception as e:
-                    core.log("telegram", f"Error in queue worker processing: {e}")
+                    self.log("telegram", f"Error in queue worker processing: {e}")
                 finally:
                     # Stop typing indicator
                     if not typing_task.done():
@@ -183,7 +185,7 @@ class Telegram(core.channel.Channel):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                core.log("telegram", f"Queue worker error: {e}")
+                self.log("telegram", f"Queue worker error: {e}")
                 await asyncio.sleep(1) # Prevent tight loop on error
 
     async def _process_stream(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -225,10 +227,12 @@ class Telegram(core.channel.Channel):
             # 2. Consume the stream
             # Use a chunk size similar to Discord's MAX_CHARS
             stream = self.format_stream_for_text(
-                self.send_stream({"role": "user", "content": user_msg}), 
+                self.send_stream({"role": "user", "content": user_msg}, commands_authorized=True),
                 use_markdown=False,
                 chunk_size=1900
             )
+
+            # command authorization enabled by default for now. group chat support is coming later, the telegram channel is meant to be used in private DM's
 
             async for token in stream:
                 if token.get("type") == "new_chunk":
@@ -263,7 +267,7 @@ class Telegram(core.channel.Channel):
                     except: pass
 
         except Exception as e:
-            core.log("telegram", f"Error processing stream: {e}")
+            self.log("telegram", f"Error processing stream: {e}")
             try:
                 await context.bot.send_message(chat_id, f"❌ Error: {str(e)}")
             except:
@@ -290,7 +294,7 @@ class Telegram(core.channel.Channel):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            core.log("telegram", f"Typing indicator error: {e}")
+            self.log("telegram", f"Typing indicator error: {e}")
 
     async def _send_telegram_message(self, text: str):
         if not self.authorized_chat_id or not self.app:
@@ -311,7 +315,7 @@ class Telegram(core.channel.Channel):
                 try:
                     await bot.send_message(chat_id, text)
                 except Exception as e:
-                    core.log("telegram", f"Failed to send message: {e}")
+                    self.log("telegram", f"Failed to send message: {e}")
             return
 
         chunks = []
@@ -339,12 +343,12 @@ class Telegram(core.channel.Channel):
                 try:
                     await bot.send_message(chat_id, chunk)
                 except Exception as e:
-                    core.log("telegram", f"Failed to send chunk: {e}")
+                    self.log("telegram", f"Failed to send chunk: {e}")
 
     async def on_push(self, message: dict):
         content = message.get("content")
 
-        core.log("telegram", content)
+        self.log("telegram", content)
 
         if self.authorized_chat_id and self.app:
             # emoji_map = {

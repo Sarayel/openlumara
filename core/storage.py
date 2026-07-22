@@ -8,16 +8,19 @@ TEMPORARY = False
 
 class StorageList(list):
     """subclassed list that handles storage of data. supports a variety of storage formats."""
-    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, autoreload=True, *args):
+    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, *args):
         super().__init__(*args)
 
         # default to openlumara data folder if no path specified
         if not path:
             path = core.get_data_path()
 
-        self.path = core.get_path(os.path.join(path, name))
+        self.path = core.sandbox_path(path, name)
         self.name = os.path.basename(self.path)
         self.binary = False
+
+        # cache for change detection
+        self._last_modified = 0.0
 
         # lets not overwrite a builtin
         file_type = type
@@ -39,7 +42,6 @@ class StorageList(list):
 
         self.type = file_type
         self.ext = file_ext
-        self.autoreload = autoreload
 
         self.path += f".{self.ext}"
 
@@ -76,6 +78,21 @@ class StorageList(list):
             core.log("error", f"error reading {self.name}: {e}")
             return False
 
+    def _file_changed(self):
+        """check if the file on disk has changed"""
+        try:
+            current_mtime = os.path.getmtime(self.path)
+            return current_mtime != self._last_modified
+        except OSError:
+            return True
+
+    def _update_mtime(self):
+        """update the cached modification time"""
+        try:
+            self._last_modified = os.path.getmtime(self.path)
+        except OSError:
+            pass
+
     def save(self):
         """save content to file"""
         if TEMPORARY:
@@ -92,13 +109,22 @@ class StorageList(list):
                 if len(self) > 0:
                     self._write("\n".join(self))
 
+        # update mtime after saving so we know our cache is fresh
+        self._update_mtime()
+
     def load(self, data=None):
         """load content from file or data argument"""
-        self.clear()
-
         if data:
+            self.clear()
             self.extend(data)
             return self
+
+        # skip reload if file hasn't changed on disk
+        if not self._file_changed():
+            self._update_mtime()
+            return self
+
+        self.clear()
 
         data = self._read()
         if not data:
@@ -114,26 +140,35 @@ class StorageList(list):
             case "text":
                 self.extend(data.split("\n"))
 
+        # update mtime after loading
+        self._update_mtime()
+
     def get(self, *args, **kwargs):
-        if self.autoreload and not TEMPORARY:
+        if not TEMPORARY:
             self.load()
 
-        return super().get(*args)
+        return super().__getitem__(args[0])
 
 class StorageDict(dict):
     """subclassed dict that handles storage of data. supports a variety of storage formats."""
-    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, autoreload=True, *args):
+    def __init__(self, name: str, type: str, manager=None, path=None, autoload=True, override_temporary=False, *args):
         super().__init__(*args)
 
         # default to openlumara data folder if no path specified
         if not path:
             path = core.get_data_path()
 
-        self.path = core.get_path(os.path.join(path, name))
+        self.path = core.sandbox_path(path, name)
 
         self.name = os.path.basename(self.path)
         self.binary = False
-        self.autoreload = autoreload
+
+        # this is mainly for the config, so that we can still make changes in temporary mode
+        # but who knows what it might be needed for in the future
+        self.override_temporary = override_temporary
+
+        # cache for change detection
+        self._last_modified = 0.0
 
         # lets not overwrite a builtin
         file_type = type
@@ -165,7 +200,7 @@ class StorageDict(dict):
             self.manager = manager
 
         if os.path.exists(self.path):
-            if autoload and not TEMPORARY:
+            if autoload and not (TEMPORARY and not self.override_temporary):
                 self.load()
         else:
             self.save()
@@ -194,11 +229,27 @@ class StorageDict(dict):
             core.log("error", f"error reading {self.name}: {e}")
             return False
 
+    def _file_changed(self):
+        """check if the file on disk has changed"""
+        try:
+            current_mtime = os.path.getmtime(self.path)
+            return current_mtime != self._last_modified
+        except OSError:
+            return True
+
+    def _update_mtime(self):
+        """update the cached modification time"""
+        try:
+            self._last_modified = os.path.getmtime(self.path)
+        except OSError:
+            pass
+
     def _parse_nested_keys(self, flat_dict):
-        """Convert flat keys like 'ideas/opticlaw/topic' into nested dict structure."""
+        """Convert flat keys like 'ideas/openlumara/topic' into nested dict structure."""
         result = {}
         for key, value in flat_dict.items():
-            parts = key.split("/")
+            # normalize separators to / to handle Windows-style paths
+            parts = key.replace("\\", "/").split("/")
             current = result
             for part in parts[:-1]:
                 if part not in current:
@@ -208,7 +259,7 @@ class StorageDict(dict):
         return result
 
     def _flatten_nested_keys(self, nested_dict, prefix=""):
-        """Convert nested dict into flat keys like 'ideas/opticlaw/topic'."""
+        """Convert nested dict into flat keys like 'ideas/openlumara/topic'."""
         result = {}
         for key, value in nested_dict.items():
             full_key = f"{prefix}/{key}" if prefix else key
@@ -216,11 +267,30 @@ class StorageDict(dict):
                 result.update(self._flatten_nested_keys(value, full_key))
             else:
                 result[full_key] = value
+
         return result
+
+    def _delete_nested_key(self, flat_key):
+        """Delete a key from the nested dict structure."""
+        # normalize the key to ensure consistent splitting
+        parts = flat_key.replace("\\", "/").split("/")
+
+        current = self
+        # traverse down to the parent dictionary of the target key
+        for part in parts[:-1]:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                # the path doesn't exist, nothing to delete
+                return
+
+        # delete the target key from the parent dictionary
+        if isinstance(current, dict) and parts[-1] in current:
+            del current[parts[-1]]
 
     def save(self):
         """save content to file"""
-        if TEMPORARY:
+        if TEMPORARY and not self.override_temporary:
             return True
 
         match self.type:
@@ -229,16 +299,28 @@ class StorageDict(dict):
             case "yaml":
                 self._write(yaml.safe_dump(dict(self), default_flow_style=False, sort_keys=False, allow_unicode=True))
             case "markdown":
+                # NOTE to readers: i suck at recursive programming, so this is where i heavily use AI assistance. ~Rose22
+
                 # recursive file structure
-                # keys like "ideas/opticlaw/topic" become nested directories
+                # keys like "ideas/openlumara/topic" become nested directories
                 if not os.path.exists(self.path):
                     os.makedirs(self.path, exist_ok=True)
 
                 # flatten nested dict to path keys
                 flat_items = self._flatten_nested_keys(dict(self))
+                failed_keys = []
 
-                for key, content in flat_items.items():
-                    name = os.path.join(self.path, f"{key}.md")
+                for key, content in list(flat_items.items()):
+                    try:
+                        name = core.sandbox_path(self.path, f"{key}.md")
+                    except ValueError as e:
+                        # if validation fails, delete the key from the in-memory dicts to keep them clean.
+                        self._delete_nested_key(key)
+                        del flat_items[key]
+                        failed_keys.append((key, str(e)))
+
+                        continue  # Skip saving this file
+
                     file_dir = os.path.dirname(name)
 
                     if not os.path.exists(file_dir):
@@ -247,14 +329,27 @@ class StorageDict(dict):
                     with open(name, "w", encoding="utf-8") as f:
                         f.write(content)
 
+                # Raise an error if any keys were skipped due to validation failure
+                if failed_keys:
+                    error_msg = "Failed to save the following keys due to validation errors:\n" + "\n".join([f"- {k}: {e}" for k, e in failed_keys])
+                    raise ValueError(error_msg)
+
                 # remove files that were deleted
                 for root, dirs, files in os.walk(self.path, topdown=False):
                     for filename in files:
                         if filename.endswith(".md"):
-                            rel_path = os.path.relpath(os.path.join(root, filename), self.path)
-                            key = rel_path[:-3]  # remove .md extension
-                            if key not in flat_items:
-                                os.remove(os.path.join(root, filename))
+                            full_path = os.path.join(root, filename)
+                            rel_path = os.path.relpath(full_path, self.path)
+
+                            # remove the .md extension
+                            path_no_ext = rel_path[:-3]
+
+                            # normalize path to make it cross-platform
+                            normalized = os.path.normpath(path_no_ext)
+                            logical_key = "/".join(normalized.split(os.sep))
+
+                            if logical_key not in flat_items:
+                                os.remove(full_path)
 
                     # remove empty directories
                     if root != self.path and not os.listdir(root):
@@ -265,13 +360,22 @@ class StorageDict(dict):
                 if len(self) > 0:
                     self._write("\n".join(dict(self)))
 
+        # update mtime after saving so we know our cache is fresh
+        self._update_mtime()
+
     def load(self, data=None):
         """load content from file or data argument"""
-        self.clear()
-
         if data:
+            self.clear()
             self.update(data)
             return True
+
+        # skip reload if file hasn't changed on disk
+        if self.type not in ["markdown"] and not self._file_changed():
+            self._update_mtime()
+            return True
+
+        self.clear()
 
         if self.type not in ["markdown"]:
             data = self._read()
@@ -290,8 +394,14 @@ class StorageDict(dict):
                     for filename in files:
                         if filename.endswith(".md"):
                             full_path = os.path.join(root, filename)
-                            rel_path = os.path.relpath(full_path, self.path)
-                            key = rel_path[:-3]  # remove .md extension
+                            rel_path = os.path.relpath(os.path.join(root, filename), self.path)
+
+                            # remove .md extension
+                            path_without_ext = rel_path[:-3]
+
+                            # normalize path to make it cross-platform
+                            normalized_path = os.path.normpath(path_without_ext)
+                            key = "/".join(normalized_path.split(os.sep))
 
                             with open(full_path, "r", encoding="utf-8") as f:
                                 flat_dict[key] = str(f.read())
@@ -304,27 +414,31 @@ class StorageDict(dict):
             case "text":
                 self.update(data.split("\n"))
 
+        # update mtime after loading
+        self._update_mtime()
         return True
 
     def get(self, *args, **kwargs):
-        if self.autoreload and not TEMPORARY:
+        if not TEMPORARY and not self.override_temporary:
             self.load()
 
         return super().get(*args)
 
 class StorageText:
     """simple class that saves its content to a text file"""
-    def __init__(self, name: str, manager=None, path=None, autoload=True, autoreload=True, *args):
+    def __init__(self, name: str, manager=None, path=None, autoload=True, *args):
         super().__init__(*args)
 
         # default to openlumara data folder if no path specified
         if not path:
             path = core.get_data_path()
 
-        self.path = core.get_path(os.path.join(path, name))
+        self.path = core.sandbox_path(path, name)
 
         self._data = ""
-        self.autoreload = autoreload
+
+        # cache for change detection
+        self._last_modified = 0.0
 
         if os.path.exists(self.path):
             if autoload and not TEMPORARY:
@@ -333,22 +447,30 @@ class StorageText:
             self.save()
 
     def __str__(self, *args, **kwargs):
-        return self._data
+        return self.get()
 
     def set(self, new_data: str):
         self._data = str(new_data)
         self.save()
     def get(self):
-        if self.autoreload and not TEMPORARY:
+        if not TEMPORARY:
             self.load()
         return str(self._data)
 
     def load(self):
+        # skip reload if file hasn't changed on disk
+        if not self._file_changed():
+            self._update_mtime()
+            return self
+
         try:
             with open(self.path, "r", encoding="utf-8") as f:
                 self._data = f.read()
         except Exception as e:
             core.log("error", f"error while loading text storage: {e}")
+
+        # update mtime after loading
+        self._update_mtime()
         return self
 
     def save(self):
@@ -358,4 +480,21 @@ class StorageText:
         with open(self.path, "w", encoding="utf-8") as f:
             f.write(self._data)
 
+        # update mtime after saving so we know our cache is fresh
+        self._update_mtime()
         return self
+
+    def _file_changed(self):
+        """check if the file on disk has changed"""
+        try:
+            current_mtime = os.path.getmtime(self.path)
+            return current_mtime != self._last_modified
+        except OSError:
+            return True
+
+    def _update_mtime(self):
+        """update the cached modification time"""
+        try:
+            self._last_modified = os.path.getmtime(self.path)
+        except OSError:
+            pass

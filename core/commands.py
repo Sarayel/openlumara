@@ -85,9 +85,10 @@ def _convert_type(value: str):
     """
     Converts string inputs from the CLI/Chat into appropriate Python types.
     """
-    if value.lower() == "true":
+
+    if value.lower() in ["true", "on"]:
         return True
-    if value.lower() == "false":
+    if value.lower() in ["false", "off"]:
         return False
 
     # Try integer conversion
@@ -107,18 +108,19 @@ def _convert_type(value: str):
     # Default to string
     return value
 
-def _set_config_value(path: list, value: str):
+async def _set_config_value(path: list, value: str, manager=None):
     """
     Sets a configuration value at a nested path.
 
     Args:
         path: A list of keys representing the nested path (e.g., ["api", "url"]).
         value: The value to set (as a string, will be type-converted).
+        manager: Optional manager instance for reloading modules after settings change.
     """
     if not path:
         return "error: Path cannot be empty"
 
-    typed_value = _convert_type(value)
+    typed_value = _convert_type(value.strip())
 
     try:
         # Access the StorageDict instance from the config module
@@ -129,6 +131,8 @@ def _set_config_value(path: list, value: str):
         # Traverse the dictionary following the path
         current = target
         for i, key in enumerate(path[:-1]):
+            if not isinstance(current, dict):
+                return f"Error: Path {path} is invalid. '{key}' is not a dictionary."
             current = current[key]
 
         # Check if the target key already exists and is a dictionary
@@ -137,10 +141,25 @@ def _set_config_value(path: list, value: str):
             return "That's a settings group! Check which settings are in it instead of trying to set its value"
 
         # Set the final value
+        if not isinstance(current, dict):
+            return f"Error: Path {path} is invalid. The parent of '{path[-1]}' is not a dictionary."
+        
         current[path[-1]] = typed_value
 
         # Persist changes to the YAML file
         core.config.config.save()
+
+        # Check if this is a module setting change and reload the module
+        module_name = None
+        if manager and len(path) >= 3 and path[0] == "modules":
+            module_name = path[2]
+
+        if module_name:
+            try:
+                await manager.reload_module(module_name)
+                return f"Config updated: {' -> '.join(path)} = {typed_value}"
+            except Exception as e:
+                return f"Config updated: {' -> '.join(path)} = {typed_value}\nWarning: Failed to reload module '{module_name}': {e}"
 
         return f"Config updated: {' -> '.join(path)} = {typed_value}"
     except Exception as e:
@@ -216,6 +235,7 @@ def _get_config_value(path: list):
 class Commands:
     # delete these after they are shown to the user once
     GHOST = ("help", "new", "clear", "context", "prompt", "tools", "stop")
+    PUBLIC_COMMANDS = ("new", "clear", "status", "stop")
 
     def __init__(self, channel):
         self.channel = channel
@@ -252,21 +272,30 @@ class Commands:
     async def _extract_cmd(self, message_text):
         message_content = message_text.strip()
         cmd_prefix = core.config.get("core").get("cmd_prefix", "/")
-        cmd_prefix_index = message_content.lower().find(cmd_prefix.lower())+len(cmd_prefix)
-
+        
+        if not message_content.startswith(cmd_prefix):
+            return None, None, []
+        
         try:
-            cmd = shlex.split(message_content[cmd_prefix_index:])
+            cmd = shlex.split(message_content[len(cmd_prefix):])
             args = cmd[1:]
             return (cmd_prefix, cmd, args)
         except ValueError as e:
-            # Handle malformed shell syntax gracefully
-            core.log_error("Command parsing error", e)
             return None, None, []
 
-    async def process_input(self, message: dict):
+    async def process_input(self, message: dict, authorized=False):
         """wrapper around the real _process_input, handles insertion of context"""
         content = self.channel._extract_content(message)
         cmd_prefix, cmd, args = await self._extract_cmd(content)
+
+        if cmd_prefix is None or cmd is None:
+            return False
+
+        if len(cmd) <= 0:
+            raise core.exceptions.UnauthorizedException("Command was somehow zero length. Aborting for security reasons.")
+
+        if not authorized and cmd[0] not in self.PUBLIC_COMMANDS:
+            raise core.exceptions.UnauthorizedException("You are not authorized to run admin commands.")
 
         # treat message as normal if it's not a command
         if cmd is None or not content.startswith(cmd_prefix):
@@ -279,12 +308,12 @@ class Commands:
         if args:
             args_display += " "
             args_display += " ".join(args)
-        await self.channel.context.chat.add({"role": "user", "content": f"{cmd_prefix}{cmd[0]}{args_display}"}, ghost=use_temporary)
+        await self.channel.context.chat.add({"role": "user", "content": f"{cmd_prefix}{cmd[0]}{args_display}"}, cmd=True, ghost=use_temporary)
 
         result = await self._process_input(message)
 
         # insert command result into context, flagging as temporary if needed
-        await self.channel.context.chat.add({"role": "assistant", "content": f"[Command Output]:\n{result}"}, ghost=use_temporary)
+        await self.channel.context.chat.add({"role": "assistant", "content": f"{result}"}, cmd=True, ghost=use_temporary)
 
         return result
 
@@ -374,42 +403,36 @@ class Commands:
                     return "Already connected."
 
                 result = await self.channel.manager.API.connect()
-                if not result:
-                    return f"error connecting to API: {self.channel.manager.API.get_last_error()}"
+                if isinstance(result, core.api.APIError):
+                    return f"Error while connecting: {result}"
 
-                return "✓ Connected!"
+                return "Connected!"
             case "reconnect":
-                    result = await self.channel.manager.reconnect_api()
+                    result = await self.channel.manager.API.reconnect()
 
-                    if result["success"]:
-                        return ["✓ ", result["message"]]
-                    else:
-                        response = [f"✗ Connection failed: {result['error']}"]
-                        if "action" in result:
-                            response.append(f"\n{result['action']}")
-                        return response
+                    if isinstance(result, core.api.APIError):
+                        return f"Error while reconnecting: {result}"
+
+                    return "Reconnected"
             case "disconnect":
                 await self.channel.manager.API.disconnect()
-                return ["✓ Disconnected from API"]
+                return "Disconnected from API"
             case "status":
-                status = self.channel.manager.get_api_status()
+                status = self.channel.manager.API.get_status()
                 lines = ["== API Status =="]
 
                 lines.append(f"Connected: {'Yes' if status['connected'] else 'No'}")
                 lines.append(f"Model: {status['model'] or 'Not set'}")
                 lines.append(f"URL: {status['url']}")
-                lines.append(f"Key configured: {'Yes' if status['key_configured'] else 'No'}")
 
-                if status['error']:
-                    lines.append(f"Last error: {status['error']}")
-
-                lines.append("")
-                lines.append("== Context Size ==")
-                context_size = await self.channel.context.get_size()
-                ctx_string = ""
-                for key, value in context_size.items():
-                    ctx_string += f"{key}: {value}\n"
-                lines.append(ctx_string)
+                if self.channel.manager.API.connected:
+                    lines.append("")
+                    lines.append("== Context Size ==")
+                    context_size = await self.channel.context.get_size()
+                    ctx_string = ""
+                    for key, value in context_size.items():
+                        ctx_string += f"{key}: {value}\n"
+                    lines.append(ctx_string)
 
                 return "\n".join(lines)
             case "modules":
@@ -423,13 +446,25 @@ class Commands:
                     return "please provide a name of the module to toggle"
 
                 module_name = args[0]
-                all_modules = core.config.get("modules", "enabled", default=[]) + core.config.get("modules", "disabled", default=[])
+                all_modules = core.config.get("modules", "enabled", default=[]) + core.config.get("modules", "disabled", default=[]) + core.config.get("user_modules", "enabled", default=[]) + core.config.get("user_modules", "disabled", default=[])
 
                 if module_name not in all_modules:
                     return "module with that name doesn't exist"
 
                 await self.channel.manager.toggle_module(module_name)
                 return "module toggled"
+            case "channel":
+                if not args:
+                    return "please provide a name of the channel to toggle"
+
+                channel_name = args[0]
+                all_channels = core.channel.get_available_channels()
+
+                if channel_name not in all_channels:
+                    return "channel with that name doesn't exist"
+
+                await self.channel.manager.toggle_channel(channel_name)
+                return "channel toggled"
             case "tools":
                 if not core.config.get("model").get("use_tools", False):
                     return "tools are turned off"
@@ -477,21 +512,18 @@ class Commands:
                                 # We hit a value but there are more args.
                                 # This means the user is trying to SET the value of this key.
                                 is_set = True
-                                path_to_use = args[:-1]
-                                value_to_use = args[-1]
+                                path_to_use = args[:i+1]
+                                value_to_use = " ".join(args[i+1:])
                                 break
                             else:
                                 # We reached the end of args and it's a value. This is a GET.
                                 break
                     else:
-                        # Key not found. This must be a SET for a new key.
-                        is_set = True
-                        path_to_use = args[:-1]
-                        value_to_use = args[-1]
-                        break
+                        # Key not found. Return an error instead of allowing a new key.
+                        return f"setting '{key}' does not exist at that path."
                 
                 if is_set:
-                    return str(_set_config_value(path_to_use, value_to_use))
+                    return await _set_config_value(path_to_use, value_to_use, self.channel.manager)
                 else:
                     return str(_get_config_value(path_to_use))
 
@@ -607,6 +639,6 @@ class Commands:
                                     try:
                                         return await bound_method(cmd[1:])
                                     except Exception as e:
-                                        core.log_error("error while executing command", e)
+                                        self.channel.log_error("error while executing command", e)
 
                 return "no such command! check /help"

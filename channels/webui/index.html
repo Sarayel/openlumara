@@ -19,7 +19,7 @@
 
     <script src="/static/js/lib/purify.min.js"></script> <!-- XSS protection -->
     <script src="/static/js/lib/marked.min.js"></script>
-    <link rel="stylesheet" href="/static/css/code-themes/github-dark.css">
+    <link rel="stylesheet" id="code-theme" href="/static/css/code-themes/github-dark.css">
     <script src="/static/js/lib/highlight.min.js"></script>
 </head>
 <body>
@@ -142,8 +142,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                             </svg>
                         </button>
-                        <div class="status-dot" id="status" role="status" aria-label="Connection status"></div>
-                        <h1>AI</h1>
+                        <h1>{{ header_title }}</h1>
                     </div>
                     <div class="header-right">
                         <button class="header-btn" id="search-btn" onclick="toggleSearch()" title="Search messages (Ctrl+F)">
@@ -171,6 +170,7 @@
                                 <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M6 16h12"></path>
                             </svg>
                         </button>
+ 
                         <button class="header-btn" onclick="showStorageEditor()" title="Storage Editor">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -339,6 +339,14 @@
                                 <span class="shortcut-desc">Stop generation</span>
                                 <div class="shortcut-keys"><span class="shortcut-key">Escape</span></div>
                             </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Previous user message (in input field)</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">Up arrow</span></div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-desc">Next user message (in input field)</span>
+                                <div class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">Down arrow</span></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -497,6 +505,20 @@
                     </div>
                 </div>
 
+                <!-- Log Modal -->
+                <div class="modal-overlay" id="log-overlay" onclick="closeModalOnOverlay(event, 'log')"></div>
+                <div class="modal log-modal" id="log-modal" role="dialog" aria-labelledby="log-title">
+                    <div class="modal-header">
+                        <h2 id="log-title">System Logs</h2>
+                        <button id="log-close" class="modal-close" onclick="toggleModal('log')" aria-label="Close log">×</button>
+                    </div>
+                    <div class="modal-content log-content">
+                        <div class="log-container" id="log-log-container">
+                            <div id="log-log-content"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="chat-container" id="chat" role="log" aria-live="polite" aria-label="Chat messages">
                     <div class="typing-indicator" id="typing" aria-label="AI is typing">
                         <span></span><span></span><span></span>
@@ -521,14 +543,54 @@
                     <input type="file" id="file-input" onchange="handleFileUpload(event)" aria-hidden="true" multiple>
                     <textarea id="message" placeholder="Type a message..." rows="1" aria-label="Message input"></textarea>
                     <button id="send" onclick="send()" aria-label="Send message">Send</button>
-                    <button id="stop" onclick="stopGeneration()" aria-label="Stop generation">Stop</button>
+                    <button id="stop" onclick="stopGeneration()" aria-label="Stop generation">
+                        <span class="stop-text">Stop</span>
+                        <span class="streaming-icon">
+                            <svg class="icon-streaming" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <svg class="icon-typing" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
+                                <path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M6 16h12"></path>
+                            </svg>
+                            <svg class="icon-skip" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="5 4 15 12 5 20 5 4"/>
+                                <line x1="19" y1="5" x2="19" y2="19"/>
+                            </svg>
+                        </span>
+                        <span class="streaming-indicator" style="display: none;">
+                            <span class="indicator-dot"></span>
+                            <span class="indicator-dot"></span>
+                            <span class="indicator-dot"></span>
+                        </span>
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
+    <script src="/themes.js"></script>
     {% for filename in js_files %}
         <script src="/static/js/{{ filename }}.js"></script>
     {% endfor %}
+
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            const swUrl = '/sw.js?v={{ version }}';
+            navigator.serviceWorker.register(swUrl)
+                .then(reg => {
+                    console.log('[SW] Registered:', reg.scope);
+                    // Update on page focus
+                    window.addEventListener('focus', () => {
+                        navigator.serviceWorker.ready.then(reg => {
+                            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                        });
+                    });
+                })
+                .catch(err => console.error('[SW] Failed:', err));
+        }
+    </script>
 </body>
 </html>

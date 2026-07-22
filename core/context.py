@@ -24,7 +24,11 @@ class Context:
         """
 
         if not self.channel.manager.API.connected:
-            return None
+            # attempt to connect
+            result = await self.channel.manager.API.connect()
+            if result is not True:
+                self.channel.log("api", str(result))
+                return result
 
         # Configuration
         max_messages = int(core.config.get("api").get("max_messages", 200))
@@ -35,7 +39,11 @@ class Context:
         # 1. Prepare Components
         system_msg = []
         if system_prompt:
-            content = await self.channel.manager.get_system_prompt()
+            try:
+                content = await self.channel.manager.get_system_prompt()
+            except Exception as e:
+                self.channel.log_error("Error while getting system prompt", e)
+
             if content:
                 system_msg = [{"role": system_role, "content": content}]
 
@@ -68,6 +76,18 @@ class Context:
             # If disabled, remove reasoning from all prior messages
             if not core.config.get("model", "keep_reasoning_in_context"):
                 messages = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
+
+            if core.config.get("model", "only_preserve_reasoning_for_current_agentic_loop"):
+                # TODO: i really need to make a more user friendly UI for core settings, that matches the UX of module/channel settings...
+                # that name is ridiculous
+
+                # strip reasoning from tool calls prior to the current agentic loop
+                loop_idx = self.channel.agentic_loop_start
+                messages[:loop_idx] = [
+                    {k: v for k, v in m.items() if k != "reasoning_content"}
+                    if "tool_calls" in m else m
+                    for m in messages[:loop_idx]
+                ]
 
             # Apply max_messages limit to history first
             if len(messages) > max_messages:
@@ -128,6 +148,19 @@ class Context:
             if histend:
                 end_msg = [{"role": dev_role, "content": histend}]
 
+        # now we inject anything modules want to inject into the user messages
+        for message in messages:
+            if message.get("injection"):
+                if message.get("role") == "user":
+                    content = message.get("content")
+                    if content and isinstance(content, str):
+                        message["content"] += f"\n\n{message['injection']}"
+
+        # remove any non-standard (metadata) fields from the messages
+        # so that we can cleanly send it to the API
+        approved_keys = ["role", "content", "reasoning_content", "tool_calls", "tool_call_id", "function_call", "tool"]
+        messages = [{k: v for k, v in msg.items() if k in approved_keys} for msg in messages]
+
         # 2. Build and Trim Context
         # We combine them to check the total token count
         full_context = system_msg + messages + end_msg
@@ -165,10 +198,13 @@ class Context:
         # If we are STILL over the limit even with empty history,
         # the system prompt + end prompt alone exceed the limit, or a single message is too large.
         if current_tokens > max_tokens:
-            await self.channel.announce(
-                "Your request exceeds the maximum token limit. Please send a smaller message!",
-                "error"
+            await self.channel.push(
+                f"Your system prompt of {current_tokens} tokens somehow exceeds the maximum context size of {max_tokens}! Please set a larger context size. Or disable some modules, disable system prompt insertion across modules, do whatever you can to reduce token size."
             )
+
+            # immediately disconnect so we don't spam the API
+            await self.channel.manager.API.disconnect()
+
             return None
 
         return full_context

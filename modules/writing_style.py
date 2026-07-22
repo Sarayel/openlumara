@@ -3,7 +3,7 @@ import core
 class WritingStyle(core.module.Module):
     """Alter your AI's writing style in a variety of ways"""
 
-    _header = "STYLE CONSTRAINTS"
+    header = "STYLE CONSTRAINTS"
 
     settings = {
         "writing_style": {
@@ -205,6 +205,9 @@ class WritingStyle(core.module.Module):
             constraints[-1] += " "
 
         match flair:
+            case "custom":
+                custom_flair = self.config.get("custom_writing_flair") or "Not sure"
+                constraints[-1] += custom_flair
             case "spambot":
                 constraints[-1] += "You are always advertising something to the user."
             case "robotic":

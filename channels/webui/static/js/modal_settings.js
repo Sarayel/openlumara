@@ -9,6 +9,28 @@ let cachedModels = null;
 let modelsLoadError = null;
 let moduleInfoCache = {};
 let showUnsafeSettings = localStorage.getItem('showUnsafeSettings') === 'true';
+let activeModule = null; // Tracks the selected module for Desktop split view / Mobile drill-down
+let activeChannel = null; // Tracks the selected channel for Desktop split view / Mobile drill-down
+let categories = {}; // Global reference to settings categories
+let modulesExpanded = { modules: false, user_modules: false, channels: false, user_channels: false }; // Tracks expansion state per category
+let isMobile = window.innerWidth <= 768; // Tracks mobile viewport state
+
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    const newIsMobile = window.innerWidth <= 768;
+    if (newIsMobile !== isMobile) {
+        isMobile = newIsMobile;
+        // Re-render settings UI if the modal is currently open
+        const overlay = document.getElementById('settings-overlay');
+        if (overlay && overlay.classList.contains('show')) {
+            renderSettingsNav(categories);
+            if (activeSettingsCategory) {
+                renderSettingsForm(categories, activeSettingsCategory);
+            }
+        }
+    }
+});
 
 // Category icons
 const SETTINGS_ICONS = {
@@ -80,6 +102,7 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
     };
 
     let order = 1;
+    const itemDescriptions = {};
 
     for (const [topKey, topValue] of Object.entries(originalData)) {
         if (topKey.toLowerCase() === 'theme' || topKey.toLowerCase() === 'theme_mode') {
@@ -108,11 +131,11 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
         };
 
         // Special handling for modules and channels
-        if (topKey === 'modules' || topKey === 'user_modules' || topKey === 'channels') {
+        if (topKey === 'modules' || topKey === 'user_modules' || topKey === 'channels' || topKey === 'user_channels') {
+            const hasToggleListStructure = isToggleList(topValue);
             const enabledItems = new Set(topValue.enabled || []);
-            const allItems = getAllToggleItems(topValue);
+            const allItems = hasToggleListStructure ? getAllToggleItems(topValue) : [];
 
-            const itemDescriptions = {};
             const unsafeModules = {};
             for (const itemName in moduleInfo) {
                 if (moduleInfo[itemName].description) {
@@ -123,21 +146,26 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
                 }
             }
 
-            addToGroup('_direct_', null, {
-                key: topKey,
-                value: {
-                    enabled: topValue.enabled || [],
-                    disabled: topValue.disabled || [],
-                    descriptions: itemDescriptions,
-                    unsafeModules: unsafeModules
-                },
-                type: 'toggle_list',
-                isModuleList: true
-            }, true);
+            if (hasToggleListStructure) {
+                addToGroup('_direct_', null, {
+                    key: topKey,
+                    value: {
+                        enabled: topValue.enabled || [],
+                        disabled: topValue.disabled || [],
+                        descriptions: itemDescriptions,
+                        unsafeModules: unsafeModules
+                    },
+                    type: 'toggle_list',
+                    isModuleList: true
+                }, true);
+            }
 
             if (topValue.settings && typeof topValue.settings === 'object') {
-                for (const [itemName, itemSettings] of Object.entries(topValue.settings)) {
-                    if (!enabledItems.has(itemName)) continue;
+                const allSettingsKeys = hasToggleListStructure ? allItems : Object.keys(topValue.settings);
+                
+                for (const itemName of allSettingsKeys) {
+                    const itemSettings = topValue.settings[itemName];
+                    if (itemSettings === undefined) continue;
 
                     const groupKey = `${topKey}.settings.${itemName}`;
                     const groupTitle = formatLabel(itemName);
@@ -148,30 +176,29 @@ function organizeSettingsIntoCategories(originalData, moduleInfo = {}) {
                         flattenSettingsObject(itemSettings, groupKey, itemSchema, (item) => {
                             addToGroup(groupKey, groupTitle, item);
                         });
-                        } else {
-                            // Handle simple values by checking the schema for an explicit type
-                            let type = detectType(itemSettings, groupKey);
-                            if (itemSchema[itemName] && itemSchema[itemName].type) {
-                                type = itemSchema[itemName].type;
-                            }
-
-                            let description = FIELD_DESCRIPTIONS[groupKey] || null;
-                            if (!description && itemSchema[itemName] && itemSchema[itemName].description) {
-                                description = itemSchema[itemName].description;
-                            }
-
-                            addToGroup(groupKey, groupTitle, {
-                                key: groupKey,
-                                value: itemSettings,
-                                type: type,
-                                description: description,
-                                unsafe: itemSchema[itemName]?.unsafe || false,
-                                min: itemSchema[itemName]?.min,
-                                max: itemSchema[itemName]?.max,
-                                step: itemSchema[itemName]?.step
-                            });
+                    } else {
+                        // Handle simple values by checking the schema for an explicit type
+                        let type = detectType(itemSettings, groupKey);
+                        if (itemSchema[itemName] && itemSchema[itemName].type) {
+                            type = itemSchema[itemName].type;
                         }
 
+                        let description = FIELD_DESCRIPTIONS[groupKey] || null;
+                        if (!description && itemSchema[itemName] && itemSchema[itemName].description) {
+                            description = itemSchema[itemName].description;
+                        }
+
+                        addToGroup(groupKey, groupTitle, {
+                            key: groupKey,
+                            value: itemSettings,
+                            type: type,
+                            description: description,
+                            unsafe: itemSchema[itemName]?.unsafe || false,
+                            min: itemSchema[itemName]?.min,
+                            max: itemSchema[itemName]?.max,
+                            step: itemSchema[itemName]?.step
+                        });
+                    }
                 }
             }
             // ... (rest of module direct items logic remains the same)
@@ -378,7 +405,7 @@ function flattenSettingsObject(obj, prefix, schema = {}, callback) {
                     else if (subSchema.type === 'select') actualType = 'select';
                     else if (subSchema.type === 'number') actualType = 'number';
                     else if (subSchema.type === 'slider') actualType = 'slider';
-                    else actualType = subSchema.type;
+                    else actualType = detectType(actualValue, fullKey);
                 } else if (isToggleList(actualValue)) {
                     actualType = 'toggle_list';
                 } else {
@@ -475,13 +502,32 @@ function unflattenObject(flat) {
 
 // Format label from key
 function formatLabel(key) {
-    return key
-    .split('.')
-    .pop()
-    .replace(/_/g, ' ')
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, str => str.toUpperCase())
-    .trim();
+    if (typeof key !== 'string') return key;
+
+    // Extract just the last part of a dotted key for display
+    const parts = key.split('.');
+    const lastPart = parts[parts.length - 1];
+
+    // Replace underscores with spaces and capitalize
+    return lastPart.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Get the current value for a given key path from the live settingsData.
+ * This is used during form re-renders to prevent losing unsaved changes.
+ */
+function getCurrentValue(key) {
+    const parts = key.split('.');
+    let current = settingsData;
+
+    for (const part of parts) {
+        if (current === null || current === undefined || typeof current !== 'object') {
+            return undefined;
+        }
+        current = current[part];
+    }
+
+    return current;
 }
 
 // Load settings from backend
@@ -512,6 +558,7 @@ async function loadSettings() {
         // 2. If successful, update the master cache and the original reference
         settingsData = newData;
         settingsOriginal = JSON.parse(JSON.stringify(settingsData));
+        changedModuleSettings.clear();
 
         // 3. Attempt to fetch module info (gracefully)
         try {
@@ -547,8 +594,10 @@ async function loadSettings() {
     }
 
     // 6. Render whatever we have (either the fresh data or the cached data)
-    const categories = organizeSettingsIntoCategories(settingsData, moduleInfoCache);
-    renderSettingsForm(categories);
+    categories = organizeSettingsIntoCategories(settingsData, moduleInfoCache);
+    const firstCategory = Object.keys(categories)[0];
+    activeSettingsCategory = firstCategory;
+    renderSettingsForm(categories, firstCategory);
     renderSettingsNav(categories);
 
     loading.style.display = 'none';
@@ -576,55 +625,290 @@ function checkForModelField(data, prefix = '') {
 }
 
 // Render settings navigation
+// Track the currently active category for highlight persistence
+let activeSettingsCategory = null;
+
+// Render settings navigation
 function renderSettingsNav(categories) {
     const nav = document.getElementById('settings-nav');
     nav.innerHTML = '';
+ 
+    nav_top = document.createElement('div');
+    nav_top.className = 'settings-nav-top';
 
     const sortedCats = Object.entries(categories)
     .sort(([a, catA], [b, catB]) => (catA.order || 0) - (catB.order || 0));
 
     sortedCats.forEach(([cat, data], index) => {
         const btn = document.createElement('button');
-        btn.className = 'settings-nav-item' + (index === 0 ? ' active' : '');
+        btn.className = 'settings-nav-item';
         btn.dataset.category = cat;
         btn.innerHTML = `
         ${SETTINGS_ICONS[cat] || SETTINGS_ICONS.other}
         <span>${data.title}</span>
         `;
         btn.onclick = () => switchSettingsCategory(cat);
-        nav.appendChild(btn);
+        nav_top.appendChild(btn);
+
+        // Add module sub-list for Modules category on desktop only
+        if (!isMobile && (cat === 'modules' || cat === 'user_modules') && data.groups && data.groups.has('_direct_')) {
+            const directGroup = data.groups.get('_direct_');
+            if (directGroup && directGroup.items.length > 0) {
+                const moduleListData = directGroup.items[0].value;
+                const allModules = getAllToggleItems({ enabled: moduleListData.enabled, disabled: moduleListData.disabled });
+                const enabledSet = new Set(moduleListData.enabled);
+                
+                const subList = document.createElement('div');
+                subList.className = 'module-sub-list' + (modulesExpanded[cat] ? ' expanded' : '');
+                subList.style.display = modulesExpanded[cat] ? '' : 'none';
+
+                allModules.forEach(moduleName => {
+                    const isUnsafe = moduleListData.unsafeModules[moduleName];
+                    if (isUnsafe && !showUnsafeSettings) return;
+                    
+                    // Only show enabled modules in the sidebar
+                    if (!enabledSet.has(moduleName)) return;
+
+                    // Check if module has settings - only show modules with actual settings
+                    const moduleSettingsGroupKey = `${cat}.settings.${moduleName}`;
+                    const moduleGroup = data.groups?.get(moduleSettingsGroupKey);
+                    if (!moduleGroup || moduleGroup.items.length === 0) return;
+
+                    const subBtn = document.createElement('button');
+                    subBtn.textContent = formatLabel(moduleName);
+                    subBtn.dataset.module = moduleName;
+                    subBtn.classList.toggle('active', activeModule === moduleName);
+
+                    subBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        selectModule(moduleName, cat);
+                    };
+
+                    subList.appendChild(subBtn);
+                });
+
+                // Insert sub-list after the main button
+                btn.parentNode.insertBefore(subList, btn.nextSibling);
+            }
+        }
+
+        // Add channel sub-list for Channels category on desktop only
+        if (!isMobile && (cat === 'channels' || cat === 'user_channels') && data.groups && data.groups.has('_direct_')) {
+            const directGroup = data.groups.get('_direct_');
+            if (directGroup && directGroup.items.length > 0) {
+                const channelListData = directGroup.items[0].value;
+                const allChannels = getAllToggleItems({ enabled: channelListData.enabled, disabled: channelListData.disabled });
+                const enabledSet = new Set(channelListData.enabled);
+                
+                const subList = document.createElement('div');
+                subList.className = 'module-sub-list' + (modulesExpanded[cat] ? ' expanded' : '');
+                subList.style.display = modulesExpanded[cat] ? '' : 'none';
+
+                allChannels.forEach(channelName => {
+                    // Only show enabled channels in the sidebar
+                    if (!enabledSet.has(channelName)) return;
+
+                    // Check if channel has settings - only show channels with actual settings
+                    const channelSettingsGroupKey = `${cat}.settings.${channelName}`;
+                    const channelGroup = data.groups?.get(channelSettingsGroupKey);
+                    if (!channelGroup || channelGroup.items.length === 0) return;
+
+                    const subBtn = document.createElement('button');
+                    subBtn.textContent = formatLabel(channelName);
+                    subBtn.dataset.channel = channelName;
+                    subBtn.classList.toggle('active', activeChannel === channelName);
+
+                    subBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        selectChannel(channelName, cat);
+                    };
+
+                    subList.appendChild(subBtn);
+                });
+
+                // Insert sub-list after the main button
+                btn.parentNode.insertBefore(subList, btn.nextSibling);
+            }
+        }
     });
+
+    // add special buttons
+
+    nav_bottom = document.createElement('div');
+    nav_bottom.className = 'settings-nav-bottom';
+
+    const logBtn = document.createElement('button');
+    logBtn.className = 'settings-nav-item';
+    logBtn.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <polyline points="4 17 10 11 4 5"></polyline>
+    <line x1="12" y1="19" x2="20" y2="19"></line>
+    </svg>
+    <span>System Logs</span>
+    `;
+    logBtn.onclick = () => toggleModal('log');
+    nav_bottom.appendChild(logBtn);
+
+    const restartBtn = document.createElement('button');
+    restartBtn.className = 'settings-nav-item restart-btn';
+    restartBtn.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.78.8 6.5 2.1l.5.4"/>
+    <path d="M21 3v5h-5"/>
+    </svg>
+    <span>Restart Server</span>
+    `;
+    restartBtn.onclick = async () => {
+        const confirmed = await showConfirmDialog("Are you sure you want to restart the server? This will disconnect the web UI momentarily.");
+        if (confirmed) {
+            restartServer();
+        }
+    };
+    nav_bottom.appendChild(restartBtn);
+
+    nav.appendChild(nav_top);
+
+    divider = document.createElement('div');
+    divider.className = 'settings-nav-divider';
+    nav.appendChild(divider);
+
+    nav.appendChild(nav_bottom);
+
+    // Restore active highlight after re-rendering
+    if (activeSettingsCategory) {
+        document.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.category === activeSettingsCategory);
+        });
+    }
 }
 
 // Switch active settings category
 function switchSettingsCategory(category) {
-    document.querySelectorAll('.settings-nav-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.category === category);
-    });
+    const nav = document.getElementById('settings-nav');
+    const savedScrollLeft = nav ? nav.scrollLeft : 0;
+    
+    activeSettingsCategory = category;
+    
+    const isModules = category === 'modules' || category === 'user_modules';
+    const isChannels = category === 'channels' || category === 'user_channels';
 
-    document.querySelectorAll('.settings-section').forEach(section => {
-        section.classList.toggle('active', section.dataset.category === category);
-    });
+    if (isModules || isChannels) {
+        // Expand the clicked category's sub-list, collapse others
+        for (const key in modulesExpanded) {
+            modulesExpanded[key] = key === category;
+        }
+
+        document.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.category === category);
+        });
+
+        // Reset active module/channel when switching to Modules/Channels category
+        if (isModules) {
+            activeModule = null;
+        }
+        if (isChannels) {
+            activeChannel = null;
+        }
+    } else {
+        // For other categories, clear all sidebar states
+        clearSidebarSelections();
+        document.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.category === category);
+        });
+    }
+
+    renderSettingsForm(categories, category);
+    // Re-render nav to update sub-list active state and visibility
+    renderSettingsNav(categories);
+    
+    // Restore scroll position to prevent mobile auto-scroll jump
+    if (nav) {
+        nav.scrollLeft = savedScrollLeft;
+    }
 }
 
-function renderSettingsForm(categories) {
+// Handle module selection from sub-list
+// Handle module selection from sub-list
+function selectModule(moduleName, category = 'modules') {
+    activeSettingsCategory = category;
+    activeModule = moduleName;
+    renderSettingsForm(categories, category);
+    renderSettingsNav(categories);
+}
+
+// Handle channel selection from sub-list
+function selectChannel(channelName, category = 'channels') {
+    activeSettingsCategory = category;
+    activeChannel = channelName;
+    renderSettingsForm(categories, category);
+    renderSettingsNav(categories);
+}
+
+function renderSettingsForm(categories, activeSettingsCategory = null) {
     const form = document.getElementById('settings-form');
     form.innerHTML = '';
+
+ 
+
+    // Mobile: Show category list if none selected
+    if (isMobile && !activeSettingsCategory) {
+        const list = document.createElement('div');
+        list.className = 'mobile-category-list';
+        list.style.cssText = 'display: flex; flex-direction: column; background: var(--bg-secondary); border-radius: 12px; overflow: hidden; margin-bottom: 16px;';
+        const sortedCats = Object.entries(categories).sort(([a, catA], [b, catB]) => (catA.order || 0) - (catB.order || 0));
+        sortedCats.forEach(([cat, data]) => {
+            const btn = document.createElement('button');
+            btn.className = 'mobile-category-btn';
+            btn.style.cssText = 'display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: none; border: none; cursor: pointer; text-align: left; font-size: 0.95rem; color: var(--text-primary); transition: background 0.15s ease; width: 100%; margin: 0;';
+            btn.innerHTML = `${SETTINGS_ICONS[cat] || SETTINGS_ICONS.other} <span style="font-weight: 500; color: var(--text-primary);">${data.title}</span>`;
+            btn.onclick = () => {
+                activeSettingsCategory = cat;
+                renderSettingsForm(categories, cat);
+            };
+            list.appendChild(btn);
+        });
+        form.appendChild(list);
+        return;
+    }
 
     const sortedCats = Object.entries(categories)
     .sort(([a, catA], [b, catB]) => (catA.order || 0) - (catB.order || 0));
 
     for (const [cat, data] of sortedCats) {
         const section = document.createElement('div');
-        section.className = 'settings-section';
+        section.className = 'settings-section' + (cat === activeSettingsCategory ? ' active' : '');
         section.dataset.category = cat;
 
-        section.innerHTML = `
-        <h3 class="settings-section-title">${data.title}</h3>
-        <p class="settings-section-desc">${data.description}</p>
-        `;
-
         const itemsContainer = document.createElement('div');
+        
+        // Only show main category header if not viewing a module/channel sub-page
+        if (!(activeModule || activeChannel)) {
+            section.innerHTML = `
+            <h3 class="settings-section-title">${data.title}</h3>
+            `;
+        } else {
+            if (isMobile) {
+                // show a back button instead on mobile
+                const backBtn = document.createElement('button');
+                backBtn.className = 'mobile-back-btn';
+                backBtn.style.cssText = 'display: flex; align-items: center; gap: 10px; border: 1px solid var(--border-color); color: var(--text-primary); font-size: 0.95rem; padding: 12px 16px; width: 100%; margin-bottom: 12px; border-radius: var(--radius-sm); transition: all 0.15s ease;';
+                backBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+                </svg>
+                <span>Back</span>
+                `;
+                backBtn.onmouseenter = () => { backBtn.style.background = 'var(--bg-secondary)'; backBtn.style.borderColor = 'var(--accent)'; };
+                backBtn.onmouseleave = () => { backBtn.style.background = 'var(--bg-tertiary)'; backBtn.style.borderColor = 'var(--border-color)'; };
+                backBtn.onclick = () => {
+                    activeModule = null;
+                    activeChannel = null;
+                    renderSettingsForm(categories, activeSettingsCategory);
+                };
+                itemsContainer.appendChild(backBtn);
+            }
+        }
         itemsContainer.className = 'settings-items';
 
         // Add theme section for appearance
@@ -640,78 +924,385 @@ function renderSettingsForm(categories) {
             }
         }
 
-        // Render groups - put direct items first
-        if (data.groups) {
-            // First render direct (ungrouped) items into the main vertical stack
-            const directGroup = data.groups.get('_direct_');
-            if (directGroup && directGroup.isDirect) {
-                directGroup.items.forEach(item => {
-                    const itemEl = createSettingItem(item);
-                    if (item.isModuleList) {
-                        itemEl.classList.add('full-width-item');
+       // Special handling for Modules category
+        if (cat === 'modules' || cat === 'user_modules') {
+            const directGroup = data.groups?.get('_direct_');
+            if (directGroup && directGroup.items.length > 0) {
+                const moduleListData = directGroup.items[0].value;
+                const allModules = getAllToggleItems({ enabled: moduleListData.enabled, disabled: moduleListData.disabled });
+                const enabledSet = new Set(moduleListData.enabled);
+
+                if (isMobile) {
+                    if (activeModule) {
+                        // Drill-down: Show settings for selected module
+
+
+                        // Render settings for the active module
+                        const moduleSettingsGroupKey = `${cat}.settings.${activeModule}`;
+                        const moduleGroup = data.groups?.get(moduleSettingsGroupKey);
+                        if (moduleGroup) {
+                            const moduleTitle = document.createElement('h3');
+                            moduleTitle.className = 'settings-section-title';
+                            moduleTitle.textContent = formatLabel(activeModule);
+                            itemsContainer.appendChild(moduleTitle);
+
+                            moduleGroup.items.forEach(item => {
+                                const itemEl = createSettingItem(item);
+                                itemsContainer.appendChild(itemEl);
+                            });
+                        } else {
+                            // Fallback if no specific settings group exists
+                            const msg = document.createElement('div');
+                            msg.className = 'settings-section-desc';
+                            msg.textContent = `No settings available for ${formatLabel(activeModule)}.`;
+                            itemsContainer.appendChild(msg);
+                        }
+                    } else {
+                        // Show unified module list with inline toggles
+                        const unifiedList = document.createElement('div');
+                        unifiedList.className = 'module-unified-list';
+                        unifiedList.style.cssText = 'display: flex; flex-direction: column; gap: 1px; background: var(--bg-secondary); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 14px;';
+
+                        // Capture the key from the toggle list item
+                        const toggleListKey = directGroup.items[0].key;
+
+                        // Filter and sort modules
+                        const filteredModules = allModules.filter(moduleName => {
+                            // Skip unsafe modules if not showing them
+                            if (moduleListData.unsafeModules[moduleName] && !showUnsafeSettings) return false;
+                            // Only show modules that have settings
+                            const moduleSettingsGroupKey = `${cat}.settings.${moduleName}`;
+                            const moduleGroup = data.groups?.get(moduleSettingsGroupKey);
+                            return moduleGroup && moduleGroup.items.length > 0;
+                        });
+
+                        // Status bar for enabled count
+                        const statusDiv = document.createElement('div');
+                        statusDiv.className = 'toggle-list-status';
+                        statusDiv.style.cssText = 'padding: 10px 12px; background: var(--bg-secondary); margin-bottom: 1px;';
+                        statusDiv.innerHTML = `<span class="toggle-count">${enabledSet.size} of ${filteredModules.length} enabled</span>`;
+                        unifiedList.appendChild(statusDiv);
+
+                        if (filteredModules.length === 0) {
+                            const emptyMsg = document.createElement('div');
+                            emptyMsg.className = 'settings-section-desc';
+                            emptyMsg.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted);';
+                            emptyMsg.textContent = 'No modules with settings available.';
+                            unifiedList.appendChild(emptyMsg);
+                        } else {
+                            filteredModules.forEach(moduleName => {
+                                const isEnabled = enabledSet.has(moduleName);
+                                const isUnsafe = !!moduleListData.unsafeModules[moduleName];
+
+                                const card = document.createElement('button');
+                                card.className = 'module-unified-card' + (isEnabled ? ' enabled' : '');
+                                if (isUnsafe) card.classList.add('module-unsafe');
+                                card.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: var(--bg-secondary); border: 1px solid var(--border-color); margin-bottom: 1em; width: 100%; text-align: left; color: var(--text-primary);';
+
+                                card.innerHTML = `
+                                    <div class="module-card-left">
+                                        <span class="module-card-name">${formatLabel(moduleName)}${isUnsafe ? ' <span class="module-unsafe-badge" style="font-size: 0.7em; background: var(--warning); color: var(--warning-text); padding: 2px 6px; border-radius: 4px; margin-left: 8px;">UNSAFE</span>' : ''}</span>
+                                    </div>
+                                    <div class="module-card-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" ${isEnabled ? 'checked' : ''} class="module-toggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                        <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                    </div>
+                                `;
+
+                                // Row tap → drill down (only if toggle wasn't clicked)
+                                card.addEventListener('click', (e) => {
+                                    if (!e.target.closest('.toggle-switch')) {
+                                        activeModule = moduleName;
+                                        renderSettingsForm(categories, cat);
+                                    }
+                                });
+
+                                // Toggle change → update state immediately
+                                const toggle = card.querySelector('.module-toggle');
+                                toggle.addEventListener('change', async () => {
+                                    const newState = toggle.checked;
+
+                                    if (newState && isUnsafe) {
+                                        const confirmed = await showConfirmDialog(
+                                            "You are about to activate an unsafe module. This module can perform actions that could potentially harm your system! Please be very sure of what you're doing. Proceed?"
+                                        );
+                                        if (!confirmed) {
+                                            toggle.checked = false;
+                                            return;
+                                        }
+                                    }
+
+                                    if (newState) {
+                                        enabledSet.add(moduleName);
+                                    } else {
+                                        enabledSet.delete(moduleName);
+                                    }
+
+                                    // Update UI
+                                    card.classList.toggle('enabled', newState);
+                                    statusDiv.querySelector('.toggle-count').textContent = `${enabledSet.size} of ${filteredModules.length} enabled`;
+
+                                    // Update data
+                                    updateToggleListData(toggleListKey, Array.from(enabledSet), allModules);
+                                });
+
+                                unifiedList.appendChild(card);
+                            });
+                        }
+                        itemsContainer.appendChild(unifiedList);
                     }
-                    itemsContainer.appendChild(itemEl);
-                });
+                } else {
+                    // Desktop: Show sidebar sub-list or module settings
+                    if (activeModule) {
+                        // Show settings for selected module
+                        const moduleSettingsGroupKey = `${cat}.settings.${activeModule}`;
+                        const moduleGroup = data.groups?.get(moduleSettingsGroupKey);
+                        if (moduleGroup) {
+                            const moduleTitle = document.createElement('h3');
+                            moduleTitle.className = 'settings-section-title';
+                            moduleTitle.textContent = formatLabel(activeModule);
+                            itemsContainer.appendChild(moduleTitle);
+
+                            moduleGroup.items.forEach(item => {
+                                const itemEl = createSettingItem(item);
+                                itemsContainer.appendChild(itemEl);
+                            });
+                        } else {
+                            // Fallback if no specific settings group exists
+                            const msg = document.createElement('div');
+                            msg.className = 'settings-section-desc';
+                            msg.textContent = `No settings available for ${formatLabel(activeModule)}.`;
+                            itemsContainer.appendChild(msg);
+                        }
+                    } else {
+                        // Show the global toggle list
+                        const itemEl = createSettingItem(directGroup.items[0]);
+                        itemsContainer.appendChild(itemEl);
+                    }
+                }
             }
+        }
 
-            // Create the grid container for grouped items
-            const groupsGrid = document.createElement('div');
-            groupsGrid.className = 'settings-groups-grid';
+        // Special handling for Channels category
+        if (cat === 'channels' || cat === 'user_channels') {
+            const directGroup = data.groups?.get('_direct_');
+            if (directGroup && directGroup.items.length > 0) {
+                const channelListData = directGroup.items[0].value;
+                const allChannels = getAllToggleItems({ enabled: channelListData.enabled, disabled: channelListData.disabled });
+                const enabledSet = new Set(channelListData.enabled);
 
-            // --- START OF SORTING LOGIC ---
-            // 1. Convert Map to Array
-            // 2. Filter out the '_direct_' key
-            // 3. Sort the resulting array by the group's title
-            const sortedGroupEntries = Array.from(data.groups.entries())
-            .filter(([groupKey]) => groupKey !== '_direct_')
-            .sort((a, b) => {
-                const titleA = a[1].title || '';
-                const titleB = b[1].title || '';
-                return titleA.localeCompare(titleB);
-            });
+                if (isMobile) {
+                    if (activeChannel) {
+                        // Render settings for the active channel
+                        const channelSettingsGroupKey = `${cat}.settings.${activeChannel}`;
+                        const channelGroup = data.groups?.get(channelSettingsGroupKey);
+                        if (channelGroup) {
+                            const channelTitle = document.createElement('h3');
+                            channelTitle.className = 'settings-section-title';
+                            channelTitle.textContent = formatLabel(activeChannel);
+                            itemsContainer.appendChild(channelTitle);
 
-            // 4. Iterate over the sorted array instead of the Map
-            sortedGroupEntries.forEach(([groupKey, groupData]) => {
-                const groupContainer = document.createElement('div');
-                groupContainer.className = 'settings-group';
-                groupContainer.dataset.group = groupKey;
+                            channelGroup.items.forEach(item => {
+                                const itemEl = createSettingItem(item);
+                                itemsContainer.appendChild(itemEl);
+                            });
+                        } else {
+                            // Fallback if no specific settings group exists
+                            const msg = document.createElement('div');
+                            msg.className = 'settings-section-desc';
+                            msg.textContent = `No settings available for ${formatLabel(activeChannel)}.`;
+                            itemsContainer.appendChild(msg);
+                        }
+                    } else {
+                        // Show unified channel list with inline toggles
+                        const unifiedList = document.createElement('div');
+                        unifiedList.className = 'channel-unified-list';
+                        unifiedList.style.cssText = 'display: flex; flex-direction: column; gap: 1px; background: var(--bg-secondary); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 14px;';
 
-                // Create header (clickable to collapse)
-                const header = document.createElement('div');
-                header.className = 'settings-group-header';
-                header.innerHTML = `
-                <span class="settings-group-title">
-                ${groupData.title}
-                </span>
-                `;
+                        // Filter channels that have settings
+                        const filteredChannels = allChannels.filter(channelName => {
+                            const channelSettingsGroupKey = `${cat}.settings.${channelName}`;
+                            const channelGroup = data.groups?.get(channelSettingsGroupKey);
+                            return channelGroup && channelGroup.items.length > 0;
+                        });
 
-                // Create content container
-                const content = document.createElement('div');
-                content.className = 'settings-group-content';
+                        // Capture the key from the toggle list item
+                        const channelListKey = directGroup.items[0].key;
 
-                // Render items within the group
-                groupData.items.forEach(item => {
-                    const itemEl = createSettingItem(item);
-                    content.appendChild(itemEl);
+                        // Status bar for enabled count
+                        const statusDiv = document.createElement('div');
+                        statusDiv.className = 'toggle-list-status';
+                        statusDiv.style.cssText = 'padding: 10px 12px; background: var(--bg-secondary); margin-bottom: 1px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;';
+                        statusDiv.innerHTML = `<span class="toggle-count">${enabledSet.size} of ${filteredChannels.length} enabled</span>`;
+                        unifiedList.appendChild(statusDiv);
+
+                        if (filteredChannels.length === 0) {
+                            const emptyMsg = document.createElement('div');
+                            emptyMsg.className = 'settings-section-desc';
+                            emptyMsg.style.cssText = 'padding: 20px; text-align: center; color: var(--text-muted);';
+                            emptyMsg.textContent = 'No channels with settings available.';
+                            unifiedList.appendChild(emptyMsg);
+                        } else {
+                            filteredChannels.forEach(channelName => {
+                                const isEnabled = enabledSet.has(channelName);
+
+                                const card = document.createElement('button');
+                                card.className = 'channel-unified-card' + (isEnabled ? ' enabled' : '');
+                                card.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: var(--bg-secondary); border: 1px solid var(--border-color); margin-bottom: 1em; width: 100%; text-align: left; color: var(--text-primary);';
+
+                                card.innerHTML = `
+                                    <div class="channel-card-left">
+                                        <span class="channel-card-name">${formatLabel(channelName)}</span>
+                                    </div>
+                                    <div class="channel-card-right">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" ${isEnabled ? 'checked' : ''} class="channel-toggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                        <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                                    </div>
+                                `;
+
+                                // Row tap → drill down (only if toggle wasn't clicked)
+                                card.addEventListener('click', (e) => {
+                                    if (!e.target.closest('.toggle-switch')) {
+                                        activeChannel = channelName;
+                                        renderSettingsForm(categories, cat);
+                                    }
+                                });
+
+                                // Toggle change → update state immediately
+                                const toggle = card.querySelector('.channel-toggle');
+                                toggle.addEventListener('change', () => {
+                                    const newState = toggle.checked;
+
+                                    if (newState) {
+                                        enabledSet.add(channelName);
+                                    } else {
+                                        enabledSet.delete(channelName);
+                                    }
+
+                                    // Update UI
+                                    card.classList.toggle('enabled', newState);
+                                    statusDiv.querySelector('.toggle-count').textContent = `${enabledSet.size} of ${filteredChannels.length} enabled`;
+
+                                    // Update data
+                                    updateToggleListData(channelListKey, Array.from(enabledSet), allChannels);
+                                });
+
+                                unifiedList.appendChild(card);
+                            });
+                        }
+                        itemsContainer.appendChild(unifiedList);
+                    }
+                } else {
+                    // Desktop: Show sidebar sub-list or channel settings
+                    if (activeChannel) {
+                        // Show settings for selected channel
+                        const channelSettingsGroupKey = `${cat}.settings.${activeChannel}`;
+                        const channelGroup = data.groups?.get(channelSettingsGroupKey);
+                        if (channelGroup) {
+                            const channelTitle = document.createElement('h3');
+                            channelTitle.className = 'settings-section-title';
+                            channelTitle.textContent = formatLabel(activeChannel);
+                            itemsContainer.appendChild(channelTitle);
+
+                            channelGroup.items.forEach(item => {
+                                const itemEl = createSettingItem(item);
+                                itemsContainer.appendChild(itemEl);
+                            });
+                        } else {
+                            // Fallback if no specific settings group exists
+                            const msg = document.createElement('div');
+                            msg.className = 'settings-section-desc';
+                            msg.textContent = `No settings available for ${formatLabel(activeChannel)}.`;
+                            itemsContainer.appendChild(msg);
+                        }
+                    } else {
+                        // Show the global toggle list
+                        const itemEl = createSettingItem(directGroup.items[0]);
+                        itemsContainer.appendChild(itemEl);
+                    }
+                }
+            }
+        }
+        
+        // Skip generic group rendering for modules/user_modules/channels
+        if (cat !== 'modules' && cat !== 'user_modules' && cat !== 'channels' && cat !== 'user_channels') {
+            // Render groups - put direct items first
+            if (data.groups) {
+                // First render direct (ungrouped) items into the main vertical stack
+                const directGroup = data.groups.get('_direct_');
+                if (directGroup && directGroup.isDirect) {
+                    directGroup.items.forEach(item => {
+                        const itemEl = createSettingItem(item);
+                        if (item.isModuleList) {
+                            itemEl.classList.add('full-width-item');
+                        }
+                        itemsContainer.appendChild(itemEl);
+                    });
+                }
+
+                // Create the grid container for grouped items
+                const groupsGrid = document.createElement('div');
+                groupsGrid.className = 'settings-groups-grid';
+
+                // --- START OF SORTING LOGIC ---
+                // 1. Convert Map to Array
+                // 2. Filter out the '_direct_' key
+                // 3. Sort the resulting array by the group's title
+                const sortedGroupEntries = Array.from(data.groups.entries())
+                .filter(([groupKey]) => groupKey !== '_direct_')
+                .sort((a, b) => {
+                    const titleA = a[1].title || '';
+                    const titleB = b[1].title || '';
+                    return titleA.localeCompare(titleB);
                 });
 
-                groupContainer.appendChild(header);
-                groupContainer.appendChild(content);
-                groupsGrid.appendChild(groupContainer);
-            });
-            // --- END OF SORTING LOGIC ---
+                // 4. Iterate over the sorted array instead of the Map
+                sortedGroupEntries.forEach(([groupKey, groupData]) => {
+                    const groupContainer = document.createElement('div');
+                    groupContainer.className = 'settings-group';
+                    groupContainer.dataset.group = groupKey;
 
-            itemsContainer.appendChild(groupsGrid);
+                    // Create header (clickable to collapse)
+                    const header = document.createElement('div');
+                    header.className = 'settings-group-header';
+                    header.innerHTML = `
+                    <span class="settings-group-title">
+                    ${groupData.title}
+                    </span>
+                    `;
+
+                    // Create content container
+                    const content = document.createElement('div');
+                    content.className = 'settings-group-content';
+
+                    // Render items within the group
+                    groupData.items.forEach(item => {
+                        const itemEl = createSettingItem(item);
+                        content.appendChild(itemEl);
+                    });
+
+                    groupContainer.appendChild(header);
+                    groupContainer.appendChild(content);
+                    groupsGrid.appendChild(groupContainer);
+                });
+                // --- END OF SORTING LOGIC ---
+
+                itemsContainer.appendChild(groupsGrid);
+            }
         }
 
         section.appendChild(itemsContainer);
         form.appendChild(section);
     }
 
-    const firstSection = form.querySelector('.settings-section');
-    if (firstSection) {
-        firstSection.classList.add('active');
-    }
+    // Re-add the unsaved changes indicator after re-rendering
+    updateUnsavedIndicator();
 }
 
 
@@ -732,10 +1323,12 @@ function createSettingItem(item) {
     wrapper.className = 'setting-item';
     wrapper.dataset.key = item.key;
 
-    const label = document.createElement('label');
-    label.className = 'setting-label';
-    label.textContent = formatLabel(item.key);
-    wrapper.appendChild(label);
+    if (item.type !== 'toggle_list') {
+        const label = document.createElement('label');
+        label.className = 'setting-label';
+        label.textContent = formatLabel(item.key);
+        wrapper.appendChild(label);
+    }
 
     if (item.description) {
         const desc = document.createElement('p');
@@ -801,7 +1394,9 @@ function createSliderInput(key, value, min = 0, max = 100, step = 1) {
     const wrapper = document.createElement('div');
     wrapper.className = 'setting-slider-container';
 
-    const currentVal = parseFloat(value) || 0;
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const currentVal = parseFloat(currentValue) || parseFloat(value) || 0;
     const minVal = parseFloat(min);
     const maxVal = parseFloat(max);
     const stepVal = parseFloat(step) || 1;
@@ -855,6 +1450,9 @@ function createSelectInput(key, value, options) {
     wrapper.className = 'setting-select-wrapper';
     wrapper.dataset.key = key;
 
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+
     const select = document.createElement('select');
     select.className = 'setting-input';
     select.dataset.key = key;
@@ -864,7 +1462,7 @@ function createSelectInput(key, value, options) {
         const option = document.createElement('option');
         option.value = optKey;
         option.textContent = optKey;
-        if (optKey === value) {
+        if (optKey === (currentValue !== undefined ? currentValue : value)) {
             option.selected = true;
         }
         select.appendChild(option);
@@ -896,6 +1494,10 @@ function createSelectInput(key, value, options) {
 
 // Create model dropdown input with refresh button
 function createModelInput(key, value) {
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const resolvedValue = currentValue !== undefined ? currentValue : value;
+
     const wrapper = document.createElement('div');
     wrapper.className = 'model-input-wrapper';
     wrapper.dataset.key = key;
@@ -923,17 +1525,17 @@ function createModelInput(key, value) {
             const option = document.createElement('option');
             option.value = model;
             option.textContent = model;
-            if (model === value) {
+            if (model === resolvedValue) {
                 option.selected = true;
             }
             select.appendChild(option);
         });
 
         // If current value not in list, add it as custom
-        if (value && !cachedModels.find(m => m === value)) {
+        if (resolvedValue && !cachedModels.find(m => m === resolvedValue)) {
             const customOption = document.createElement('option');
-            customOption.value = value;
-            customOption.textContent = `${value} (custom)`;
+            customOption.value = resolvedValue;
+            customOption.textContent = `${resolvedValue} (custom)`;
             customOption.selected = true;
             select.insertBefore(customOption, placeholderOption.nextSibling);
         }
@@ -972,7 +1574,7 @@ function createModelInput(key, value) {
                 wrapper.replaceWith(newInput);
             } else {
                 // Show error, fall back to text input
-                const textInput = createTextInput(key, value, 'text');
+                const textInput = createTextInput(key, resolvedValue, 'text');
                 wrapper.replaceWith(textInput);
 
                 // Show error message
@@ -997,7 +1599,7 @@ function createModelInput(key, value) {
         input.type = 'text';
         input.className = 'setting-input';
         input.dataset.key = key;
-        input.value = value ?? '';
+        input.value = resolvedValue ?? '';
         input.placeholder = 'Enter model name';
         input.oninput = () => handleSettingChange(key, input.value);
 
@@ -1060,14 +1662,47 @@ function createModelInput(key, value) {
 
 // Create toggle list (for enabled/disabled arrays)
 function createToggleListInput(key, value, isModuleList = false) {
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const resolvedValue = currentValue !== undefined ? currentValue : value;
+
     const wrapper = document.createElement('div');
     wrapper.className = 'toggle-list';
     wrapper.dataset.key = key;
 
-    const allItems = getAllToggleItems(value);
-    const enabledSet = new Set(value.enabled || []);
-    const descriptions = value.descriptions || {};
-    const unsafeModules = value.unsafeModules || {};
+    // Use resolved value for getAllToggleItems to get current state
+    const allItems = getAllToggleItems(resolvedValue);
+    const enabledSet = new Set(resolvedValue.enabled || []);
+
+    // descriptions and unsafeModules are computed metadata from moduleInfoCache.
+    // On re-render they may be missing from the raw settingsData, so we fall back
+    // to the passed-in value's metadata or recompute from the cache.
+    let descriptions = resolvedValue.descriptions;
+    let unsafeModules = resolvedValue.unsafeModules;
+
+    if ((descriptions === undefined || descriptions === null) && value && value.descriptions) {
+        descriptions = value.descriptions;
+    }
+    if ((unsafeModules === undefined || unsafeModules === null) && value && value.unsafeModules) {
+        unsafeModules = value.unsafeModules;
+    }
+    // Final fallback: recompute from moduleInfoCache if still missing
+    if (descriptions === undefined || descriptions === null) {
+        descriptions = {};
+        for (const itemName in moduleInfoCache) {
+            if (moduleInfoCache[itemName].description) {
+                descriptions[itemName] = moduleInfoCache[itemName].description;
+            }
+        }
+    }
+    if (unsafeModules === undefined || unsafeModules === null) {
+        unsafeModules = {};
+        for (const itemName in moduleInfoCache) {
+            if (moduleInfoCache[itemName].unsafe) {
+                unsafeModules[itemName] = true;
+            }
+        }
+    }
 
     const sortedItems = allItems
     .filter(item => {
@@ -1248,6 +1883,9 @@ function updateToggleListData(key, enabledItems, allItems) {
 
     settingsHasChanges = JSON.stringify(settingsData) !== JSON.stringify(settingsOriginal);
     updateUnsavedIndicator();
+
+    // Note: Module enabled/disabled list changes are handled by server restart
+    // (via hasChannelOrModuleChanges), so we don't track them for individual reload.
 }
 
 // Create text input (with sensitive field detection)
@@ -1256,6 +1894,9 @@ function createTextInput(key, value, type = 'text') {
     const isSensitive = keyLower.includes('token') || keyLower.includes('key') ||
     keyLower.includes('secret') || keyLower.includes('password') ||
     keyLower.includes('credential');
+
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key) ?? '';
 
     // For sensitive fields, use a reveal/hide toggle
     if (isSensitive) {
@@ -1266,7 +1907,7 @@ function createTextInput(key, value, type = 'text') {
         const input = document.createElement('input');
         input.type = 'password';
         input.className = 'setting-input sensitive-input';
-        input.value = value ?? '';
+        input.value = currentValue;
         input.dataset.revealed = 'false';
 
         const toggleBtn = document.createElement('button');
@@ -1309,7 +1950,7 @@ function createTextInput(key, value, type = 'text') {
     input.type = type === 'url' ? 'url' : (type === 'email' ? 'email' : 'text');
     input.className = 'setting-input';
     input.dataset.key = key;
-    input.value = value ?? '';
+    input.value = currentValue;
     input.oninput = () => handleSettingChange(key, input.value);
     return input;
 }
@@ -1319,11 +1960,14 @@ function createPasswordInput(key, value) {
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'position: relative; display: flex; align-items: center;';
 
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key) ?? '';
+
     const input = document.createElement('input');
     input.type = 'password';
     input.className = 'setting-input';
     input.dataset.key = key;
-    input.value = value ?? '';
+    input.value = currentValue;
     input.style.paddingRight = '40px';
     input.oninput = () => handleSettingChange(key, input.value);
 
@@ -1343,28 +1987,37 @@ function createPasswordInput(key, value) {
 
 // Create textarea
 function createTextareaInput(key, value) {
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key) ?? '';
+
     const textarea = document.createElement('textarea');
     textarea.className = 'setting-input setting-textarea';
     textarea.dataset.key = key;
-    textarea.value = value ?? '';
+    textarea.value = currentValue;
     textarea.oninput = () => handleSettingChange(key, textarea.value);
     return textarea;
 }
 
 // Create number input
 function createNumberInput(key, value) {
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key) ?? 0;
+
     const input = document.createElement('input');
     input.type = 'number';
     input.className = 'setting-input';
     input.dataset.key = key;
-    input.value = value ?? 0;
-    input.step = Number.isInteger(value) ? '1' : '0.01';
+    input.value = currentValue;
+    input.step = Number.isInteger(currentValue) ? '1' : '0.01';
     input.oninput = () => handleSettingChange(key, parseFloat(input.value) || 0);
     return input;
 }
 
 // Create toggle switch (single boolean)
 function createToggleInput(key, value, isUnsafe = false) {
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key) ?? value;
+
     const wrapper = document.createElement('div');
     wrapper.className = 'setting-toggle-wrapper';
 
@@ -1373,14 +2026,14 @@ function createToggleInput(key, value, isUnsafe = false) {
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.checked = value;
+    checkbox.checked = currentValue;
 
     const slider = document.createElement('span');
     slider.className = 'toggle-slider';
 
     const labelSpan = document.createElement('span');
     labelSpan.className = 'setting-toggle-label';
-    labelSpan.textContent = value ? 'Enabled' : 'Disabled';
+    labelSpan.textContent = currentValue ? 'Enabled' : 'Disabled';
 
     // Handle change
     checkbox.onchange = async () => {
@@ -1414,7 +2067,10 @@ function createArrayInput(key, value) {
     wrapper.className = 'setting-array';
     wrapper.dataset.key = key;
 
-    const items = Array.isArray(value) ? [...value] : [];
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const resolvedValue = currentValue !== undefined ? currentValue : value;
+    const items = Array.isArray(resolvedValue) ? [...resolvedValue] : [];
 
     const header = document.createElement('div');
     header.className = 'setting-array-header';
@@ -1483,7 +2139,10 @@ function createArrayInput(key, value) {
 
 // Create object input
 function createObjectInput(key, value) {
-    const entries = value && typeof value === 'object' ? Object.entries(value) : [];
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const resolvedValue = currentValue !== undefined ? currentValue : value;
+    const entries = resolvedValue && typeof resolvedValue === 'object' ? Object.entries(resolvedValue) : [];
 
     const wrapper = document.createElement('div');
     wrapper.className = 'setting-object';
@@ -1574,6 +2233,9 @@ function createObjectInput(key, value) {
 }
 
 // Handle setting change
+// Track which modules have had their settings changed (for reload-on-save)
+let changedModuleSettings = new Set();
+
 function handleSettingChange(key, value) {
     const parts = key.split('.');
     let current = settingsData;
@@ -1589,6 +2251,16 @@ function handleSettingChange(key, value) {
 
     settingsHasChanges = JSON.stringify(settingsData) !== JSON.stringify(settingsOriginal);
     updateUnsavedIndicator();
+
+    // Track which modules had settings changed
+    // Module settings keys look like: "modules.settings.mymodule.something"
+    // or "user_modules.settings.mymodule.something"
+    if (parts.length >= 4) {
+        if ((parts[0] === 'modules' || parts[0] === 'user_modules') && parts[1] === 'settings') {
+            const moduleName = parts[2];
+            changedModuleSettings.add(moduleName);
+        }
+    }
 }
 
 // Update unsaved changes indicator
@@ -1616,6 +2288,7 @@ function resetSettingsForm() {
 
     settingsData = JSON.parse(JSON.stringify(settingsOriginal));
     settingsHasChanges = false;
+    changedModuleSettings.clear();
 
     const categories = organizeSettingsIntoCategories(settingsData);
     renderSettingsForm(categories);
@@ -1624,10 +2297,10 @@ function resetSettingsForm() {
 
 // Save settings to backend
 async function saveSettings() {
-    const activeCategory = document.querySelector('.settings-nav-item.active')?.dataset.category;
+    const activeSettingsCategory = document.querySelector('.settings-nav-item.active')?.dataset.category;
 
     // Appearance changes are local/immediate and don't trigger server saves here
-    if (activeCategory === 'appearance') {
+    if (activeSettingsCategory === 'appearance') {
         toggleModal('settings');
         return;
     }
@@ -1649,7 +2322,10 @@ async function saveSettings() {
         const response = await fetch('/settings/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settingsData),
+            body: JSON.stringify({
+                settings: settingsData,
+                changed_modules: Array.from(changedModuleSettings)
+            }),
                                      signal: AbortSignal.timeout(15000)
         });
 
@@ -1661,12 +2337,12 @@ async function saveSettings() {
         // Success: Update the original reference so "unsaved" indicator clears
         settingsOriginal = JSON.parse(JSON.stringify(settingsData));
         settingsHasChanges = false;
+        changedModuleSettings.clear();
 
         if (hasChannelOrModuleChanges) {
-            showSettingsSuccessWithRestart();
             await restartServer();
         } else if (hasApiOrModelChanges) {
-            await reconnectApi();
+            await fetch('/api/reconnect', { method: 'POST' });
             toggleModal('settings');
         } else {
             showSettingsSuccess();
@@ -1692,13 +2368,31 @@ async function saveSettings() {
 
 // Detect if there are changes beyond just theme
 // Detect if there are changes in channel or module settings
+// Detect if there are changes beyond just theme
+// Detect if there are changes in channel or module settings
 function detectChannelOrModuleChanges() {
-    for (const key of ['channels', 'modules', 'user_modules']) {
-        if (settingsData[key] && JSON.stringify(settingsData[key]) !== JSON.stringify(settingsOriginal[key])) {
+    for (const key of ['channels', 'user_channels', 'modules', 'user_modules']) {
+        const newData = settingsData[key];
+        const oldData = settingsOriginal[key];
+        if (!newData || !oldData) continue;
+
+        // Only check enabled/disabled arrays, not settings values
+        const newEnabled = JSON.stringify(newData.enabled || []);
+        const oldEnabled = JSON.stringify(oldData.enabled || []);
+        const newDisabled = JSON.stringify(newData.disabled || []);
+        const oldDisabled = JSON.stringify(oldData.disabled || []);
+
+        if (newEnabled !== oldEnabled || newDisabled !== oldDisabled) {
             return true;
         }
     }
     return false;
+}
+
+// Detect if there are changes in channel settings specifically (for sidebar sub-items)
+function detectChannelChanges() {
+    if (!settingsData['channels']) return false;
+    return JSON.stringify(settingsData['channels']) !== JSON.stringify(settingsOriginal['channels']);
 }
 
 // Detect if there are changes in API or model settings
@@ -1735,6 +2429,10 @@ async function restartServer() {
             restartMsg.textContent = 'Restarting server...';
         }
 
+        // show system logs
+        closeModal('settings');
+        showModal('log', true);
+
         const response = await fetch('/server/restart', {
             method: 'POST',
             signal: AbortSignal.timeout(5000)
@@ -1743,85 +2441,11 @@ async function restartServer() {
             return { ok: true };
         });
 
-        // Show restart notification
-        showRestartNotification();
-
+        // the websocket signal handles the server's on_ready()
+        // so that we can close the modal again/reload the page
     } catch (err) {
-        // Expected - server is restarting
-        showRestartNotification();
+        pass
     }
-}
-
-// Show settings saved with restart message
-function showSettingsSuccessWithRestart() {
-    const form = document.getElementById('settings-form');
-    const existing = form.querySelector('.setting-success-msg');
-    if (existing) existing.remove();
-
-    const success = document.createElement('div');
-    success.className = 'setting-success-msg restart-pending';
-    success.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-    Settings saved! Server restarting...
-    `;
-
-    form.insertBefore(success, form.firstChild);
-}
-
-
-// Show restart notification
-function showRestartNotification() {
-    const form = document.getElementById('settings-form');
-    const existing = form.querySelector('.restart-notification');
-    if (existing) existing.remove();
-
-    const notification = document.createElement('div');
-    notification.className = 'restart-notification';
-    notification.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
-    <path d="M21 3v5h-5"></path>
-    </svg>
-    <div class="restart-content">
-    <div class="restart-title">Server Restarting</div>
-    <div class="restart-desc">The server is applying your changes. The page will refresh when ready.</div>
-    </div>
-    `;
-
-    form.insertBefore(notification, form.firstChild);
-
-    // Start polling for server availability
-    pollForServerRestart();
-}
-
-// Poll for server to come back up
-function pollForServerRestart() {
-    let attempts = 0;
-    const maxAttempts = 60; // 30 seconds max
-
-    const poll = setInterval(async () => {
-        attempts++;
-
-        if (attempts >= maxAttempts) {
-            clearInterval(poll);
-            showRestartFailed();
-            return;
-        }
-
-        try {
-            const response = await fetch('/settings/load', {
-                method: 'GET',
-                signal: AbortSignal.timeout(1000)
-            });
-
-            if (response.ok) {
-                clearInterval(poll);
-                showRestartComplete();
-            }
-        } catch (err) {
-            // Server not ready yet, keep polling
-        }
-    }, 500);
 }
 
 // Show restart failed message
@@ -1843,28 +2467,6 @@ function showRestartFailed() {
     }
 }
 
-// Show restart complete and refresh page
-function showRestartComplete() {
-    const notification = document.querySelector('.restart-notification');
-    if (notification) {
-        notification.classList.add('restart-complete');
-        notification.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        <div class="restart-content">
-        <div class="restart-title">Server Restarted</div>
-        <div class="restart-desc">Refreshing page...</div>
-        </div>
-        `;
-    }
-
-    // Refresh the page after a short delay
-    setTimeout(() => {
-        window.location.reload();
-    }, 500);
-}
-
 // Show success message (theme only - no restart)
 function showSettingsSuccess() {
     const form = document.getElementById('settings-form');
@@ -1880,6 +2482,7 @@ function showSettingsSuccess() {
 
     form.insertBefore(success, form.firstChild);
     setTimeout(() => success.remove(), 3000);
+    toggleModal('settings');
 }
 
 // Show error message
@@ -2205,7 +2808,6 @@ function createThemeSection() {
     const savedMode = localStorage.getItem('themeMode') || 'dark';
     const savedFontSize = localStorage.getItem('fontSize') || '16';
     const savedFontFamily = localStorage.getItem('fontFamily') || 'default';
-    const families = getThemeFamilies();
 
     // Font options with display names
     const fontOptions = [
@@ -3023,32 +3625,6 @@ function createThemeSection() {
     twControls.className = 'audio-control-group';
     twControls.style.display = savedTypewriterEnabled ? 'flex' : 'none';
 
-    // ==========================================================================
-    // SWEEP FADE TOGGLE
-    // ==========================================================================
-
-    const fadeEnabled = localStorage.getItem('typewriterFadeEnabled') === 'true';
-
-    const fadeToggleRow = document.createElement('div');
-    fadeToggleRow.className = 'toggle-row';
-    fadeToggleRow.innerHTML = `
-    <div class="toggle-info">
-    <span class="toggle-label">Fade</span>
-    <span class="toggle-description">Letters fade in smoothly as they appear</span>
-    </div>
-    <label class="toggle-switch">
-    <input type="checkbox" id="typewriter-fade-checkbox" ${fadeEnabled ? 'checked' : ''}>
-    <span class="toggle-slider"></span>
-    </label>
-    `;
-
-    const fadeCheckbox = fadeToggleRow.querySelector('#typewriter-fade-checkbox');
-    fadeCheckbox.addEventListener('change', function() {
-        localStorage.setItem('typewriterFadeEnabled', this.checked ? 'true' : 'false');
-    });
-
-    twControls.appendChild(fadeToggleRow);
-
     // Speed Slider
     const currentSpeed = parseInt(localStorage.getItem("typewriterSpeed") ?? "30", 10);
     const minSpeed = 1;
@@ -3212,19 +3788,19 @@ function createThemeSection() {
     themeGrid.className = 'theme-grid';
     themeGrid.id = 'theme-grid-settings';
 
-    families.forEach((variants, family) => {
-        const previewThemeId = variants.dark || variants.light;
-        const previewTheme = themes[previewThemeId];
-        if (!previewTheme) return;
+    Object.entries(window.themes).forEach(([family, themeData]) => {
+        // themeData is now { dark: { vars... }, light: { vars... } }
+        const previewVars = themeData[savedMode] || themeData['dark'];
+        if (!previewVars) return;
 
         const btn = document.createElement('button');
         btn.className = 'theme-btn' + (family === savedFamily ? ' active' : '');
         btn.dataset.family = family;
         btn.type = 'button';
 
-        const bgColor = previewTheme.vars['--bg-primary'];
-        const accentColor = previewTheme.vars['--accent'];
-        const themeName = previewTheme.name;
+        const bgColor = previewVars['--bg-primary'];
+        const accentColor = previewVars['--accent'];
+        const themeName = family.charAt(0).toUpperCase() + family.slice(1); // Simple title case
 
         btn.innerHTML = `
         <div class="theme-preview" style="background: linear-gradient(135deg, ${bgColor} 50%, ${accentColor} 50%);"></div>
@@ -3263,6 +3839,26 @@ function updateThemeButtonsInSettings() {
     }
 }
 
+// Helper to clear all sidebar selections and collapse sub-lists
+function clearSidebarSelections() {
+    activeModule = null;
+    activeChannel = null;
+    modulesExpanded = { modules: false, user_modules: false, channels: false, user_channels: false };
+
+    document.querySelectorAll('.settings-nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+
+    document.querySelectorAll('.module-sub-list button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    document.querySelectorAll('.module-sub-list').forEach(list => {
+        list.classList.remove('expanded');
+        list.style.display = 'none';
+    });
+}
+
 // Override toggleModal for settings
 const originalToggleModal = toggleModal;
 toggleModal = function(modalName) {
@@ -3278,6 +3874,10 @@ toggleModal = function(modalName) {
             }
             overlay.classList.remove('show');
             modal.classList.remove('show');
+
+            // Clear active selections from sidebar when dialog closes
+            activeSettingsCategory = null;
+            clearSidebarSelections();
         } else {
             overlay.classList.add('show');
             modal.classList.add('show');
@@ -3311,7 +3911,6 @@ toggleModal = function(modalName) {
     document.body.classList.toggle('token-bar-hidden', !isVisible);
 })();
 
-
 // Create reasoning effort slider
 function createReasoningEffortSlider(key, value) {
     const wrapper = document.createElement('div');
@@ -3320,6 +3919,10 @@ function createReasoningEffortSlider(key, value) {
 
     const container = document.createElement('div');
     container.className = 'setting-slider-container';
+
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const resolvedValue = currentValue !== undefined ? currentValue : value;
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -3346,10 +3949,10 @@ function createReasoningEffortSlider(key, value) {
 
     // Find current index from value
     let currentIndex = 0;
-    if (value === 'low') currentIndex = 1;
-    else if (value === 'medium') currentIndex = 2;
-    else if (value === 'high') currentIndex = 3;
-    else if (value === 'xhigh') currentIndex = 4;
+    if (resolvedValue === 'low') currentIndex = 1;
+    else if (resolvedValue === 'medium') currentIndex = 2;
+    else if (resolvedValue === 'high') currentIndex = 3;
+    else if (resolvedValue === 'xhigh') currentIndex = 4;
     else currentIndex = 0;
 
     slider.value = currentIndex;
@@ -3384,7 +3987,9 @@ function createPercentageSlider(key, value) {
     const wrapper = document.createElement('div');
     wrapper.className = 'setting-slider-container';
 
-    const currentVal = parseFloat(value) || 0;
+    // Get current value from live settingsData (for re-render safety)
+    const currentValue = getCurrentValue(key);
+    const currentVal = parseFloat(currentValue) || parseFloat(value) || 0;
     const minVal = 0;
     const maxVal = 1;
     const stepVal = 0.01;

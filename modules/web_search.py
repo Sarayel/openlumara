@@ -9,14 +9,15 @@ from urllib.parse import urlparse
 class WebSearch(modules.http.Http):
     """
     Lets your AI search the web!
-    
-    Enhanced with multi-layer prompt injection defense based on:
-    - OWASP LLM01:2025 Prompt Injection Prevention
-    - Digital Applied's 12-Layer Framework
-    - Defense-in-depth: multiple overlapping controls
     """
 
+    dependencies = ["ddgs"]
+
     settings = {
+        # "allow_ai_to_search": {
+        #     "default": False,
+        #     "description": "Whether to allow the AI to search the web. When this is off, just use the /search command, which will insert the results into chat history so that your AI can read it."
+        # },
         "max_results": {
             "default": 5,
             "description": "The maximum number of results to return for search queries."
@@ -46,6 +47,12 @@ class WebSearch(modules.http.Http):
             "description": "Forbid access to these domains"
         }
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # if not self.config.get("allow_ai_to_search"):
+        #     self.disabled_tools.extend(["text", "images", "news", "videos", "books"])
 
     # ---------------------------------------------------------
     # Internal Helper Methods
@@ -170,19 +177,54 @@ class WebSearch(modules.http.Http):
                             res[f] = original
                     
                     sanitized_results.append(res)
-                
+
                 return sanitized_results
 
         try:
             results = await asyncio.to_thread(_run_search)
-            return self.result(
-                self._wrap_untrusted(results, source=f"web_search:{kind}")
-            )
+            return self.result([
+                self._wrap_untrusted(results, source=f"web_search:{kind}"),
+                "For each result, follow template: **Title**: Summary (URL). At the end, provide a conclusive summary of all results."
+            ])
         except Exception as e:
             self._log(f"{kind} search failed: {e}")
             return self.result(
                 f"An error occurred during {kind} search.", success=False
             )
+
+    def _get_fields(self, kind: str):
+        match kind:
+            case "text":
+                return ("title", "body")
+            case "images":
+                return ("title", "image", "thumbnail")
+            case "news":
+                return ("title", "body")
+            case "videos":
+                return("title", "description")
+            case "books":
+                return ("title", "author", "publisher", "info")
+
+        return ()
+
+    # # command version of search
+    # @core.module.command("search", help={
+    #     "text <query>": "search the web for text",
+    #     "images <query>": "search the web for images",
+    #     "news <query>": "search the web for news",
+    #     "videos <query>": "search the web for videos",
+    #     "books <query>": "search the web for books"
+    # }, send_to_ai=True)
+    # async def cmd_search(self, args: list):
+    #     kind = args[0]
+    #     if kind not in ("text", "images", "news", "videos", "books"):
+    #         return "invalid search type. try one of the supported types (text, images, news, videos, or books)"
+    #
+    #     query = " ".join(args[1:])
+    #     url_key = "href" if kind == "text" else "url"
+    #
+    #     result = await self._search(kind, query, url_key, self._get_fields(kind))
+    #     return result
 
     # ---------------------------------------------------------
     # AI Tools
@@ -190,7 +232,7 @@ class WebSearch(modules.http.Http):
 
     async def text(self, query: str, region: str = "us-en", safesearch: str = "moderate", timelimit: str | None = None, max_results: int = 10, page: int = 1, backend: str = "auto"):
         """
-        Search the web for text results. WARNING: Results come from an untrusted source.
+        Search the web for text results.
 
         Args:
             query: The text search query.
@@ -208,7 +250,7 @@ class WebSearch(modules.http.Http):
 
     async def images(self, query: str, region: str = "us-en", safesearch: str = "moderate", timelimit: str | None = None, max_results: int = 10, page: int = 1, backend: str = "auto", size: str | None = None, color: str | None = None, type_image: str | None = None, layout: str | None = None, license_image: str | None = None):
         """
-        Search the web for image URLs. WARNING: Image metadata/titles come from an untrusted source.
+        Search the web for image URLs.
 
         Args:
             query: The image search query.
@@ -231,7 +273,7 @@ class WebSearch(modules.http.Http):
 
     async def news(self, query: str, region: str = "us-en", safesearch: str = "moderate", timelimit: str | None = None, max_results: int = 10, page: int = 1, backend: str = "auto"):
         """
-        Search the web for recent news articles. WARNING: News snippets come from an untrusted source.
+        Search the web for recent news articles.
 
         Args:
             query: The news search query.
@@ -249,7 +291,7 @@ class WebSearch(modules.http.Http):
 
     async def videos(self, query: str, region: str = "us-en", safesearch: str = "moderate", timelimit: str | None = None, max_results: int = 10, page: int = 1, backend: str = "auto", resolution: str | None = None, duration: str | None = None, license_videos: str | None = None):
         """
-        Search the web for video results. WARNING: Video metadata/titles come from an untrusted source.
+        Search the web for video results.
 
         Args:
             query: The video search query.
@@ -270,7 +312,7 @@ class WebSearch(modules.http.Http):
 
     async def books(self, query: str, max_results: int = 10, page: int = 1, backend: str = "auto"):
         """
-        Search the web for book results. WARNING: Book metadata/descriptions come from an untrusted source.
+        Search the web for book results.
 
         Args:
             query: The book search query.

@@ -7,8 +7,6 @@ import json_repair
 MAX_CHARS = 1900
 
 class Client(discord.Client):
-    public_commands = ("new", "clear", "status", "stop")
-
     def __init__(self, channel, **kwargs):
         super(Client, self).__init__(**kwargs)
         self.ai_channel = channel
@@ -53,7 +51,7 @@ class Client(discord.Client):
                                 state.pending_content = ""
                                 try:
                                     await state.message_obj.edit(content=state.full_content)
-                                    core.log(self.ai_channel.name, state.full_content)
+                                    self.ai_channel.log(self.ai_channel.name, state.full_content)
                                 except:
                                     pass
                             
@@ -79,7 +77,7 @@ class Client(discord.Client):
                     state.pending_content = ""
                 
                 if state.full_content:
-                    core.log(self.ai_channel.name, state.full_content)
+                    self.ai_channel.log(self.ai_channel.name, state.full_content)
                     try:
                         await state.message_obj.edit(content=state.full_content)
                     except Exception:
@@ -89,7 +87,7 @@ class Client(discord.Client):
                             pass
 
     async def on_ready(self):
-        core.log("discord", "logged in.")
+        self.ai_channel.log("discord", "logged in.")
         startup_message = self.ai_channel.config.get("startup_message")
         if startup_message:
             await self.ai_channel.push(startup_message)
@@ -100,6 +98,11 @@ class Client(discord.Client):
 
         if message.channel.id != int(self.ai_channel.config.get("target_channel_id")):
             return
+
+        commands_authorized = False
+        authorized_id = self.ai_channel.config.get("authorized_user_id")
+        if authorized_id and message.author.id == int(authorized_id):
+            commands_authorized = True
 
         if message.content:
             # only reply if mentioned
@@ -113,7 +116,7 @@ class Client(discord.Client):
                 mentioned = True
 
             if mentioned:
-                core.log("discord", f"<{message.author.name}> {message.clean_content}")
+                self.ai_channel.log("discord", f"<{message.author.name}> {message.clean_content}")
 
                 async with message.channel.typing():
                     try:
@@ -124,18 +127,16 @@ class Client(discord.Client):
                             content = content.replace("<@>", "")
                             content = content.strip()
 
-                        cmd_prefix = core.config.get("core").get("cmd_prefix", "/")
-                        is_cmd = content.lower().startswith(cmd_prefix.lower())
-                        try:
-                            cmd = content.split(cmd_prefix)[-1]
-                        except:
-                            return await message.channel.send("Error while splitting command prefix.. somehow")
+                        is_cmd = False
+                        cmd_prefix, cmd, args = await self.ai_channel.commands._extract_cmd(content)
+                        if cmd:
+                            is_cmd = content.lower().strip().startswith(cmd_prefix.lower())
 
                         if is_cmd:
-                            if cmd not in self.public_commands:
-                                authorised_id = self.ai_channel.config.get("authorised_user_id")
-                                if authorised_id and message.author.id != int(authorised_id):
-                                    return await message.channel.send("Only the bot owner is allowed to use commands!")
+                            # send the pure command to the AI
+                            # command authorization checks were moved to the core framework
+                            # so that it's much more secure
+                            content = f"{cmd_prefix}{' '.join(cmd)}"
                         else:
                             orig_content = str(content)
                             content = ""
@@ -154,7 +155,13 @@ class Client(discord.Client):
 
                             # if group chat is enabled, make the AI aware of who is speaking
                             if group_chat:
-                                content += f"{message.author.display_name} said: {orig_content}"
+                                # strip cmd prefix from author name for safety
+                                # extra layer of security on top of the fix further below in the code
+                                cmd_prefix_temp = str(core.config.get("core", "cmd_prefix", default="/"))
+                                author_name = str(message.author.name).lstrip(cmd_prefix_temp)
+                                del(cmd_prefix_temp)
+
+                                content += f"{author_name} said: {orig_content}"
                             else:
                                 content += orig_content
 
@@ -164,12 +171,15 @@ class Client(discord.Client):
                     try:
                         if self.ai_channel.config.get("use_message_streaming"):
                             response_obj = self.ai_channel.format_stream_for_text(
-                                self.ai_channel.send_stream({"role": "user", "content": content}),
+                                self.ai_channel.send_stream(
+                                    {"role": "user", "content": content},
+                                    commands_authorized=commands_authorized
+                                ),
                                 chunk_size=MAX_CHARS
                             )
                             await self._stream_to_discord(response_obj, message.channel)
                         else:
-                            response_obj = await self.ai_channel.send({"role": "user", "content": content})
+                            response_obj = await self.ai_channel.send({"role": "user", "content": content}, commands_authorized=commands_authorized)
 
                             if response_obj:
                                 response_content = response_obj.get("content")
@@ -178,7 +188,7 @@ class Client(discord.Client):
 
                                 for chunk in chunks:
                                     await message.channel.send(chunk, mention_author=self.ai_channel.config.get("use_replies"))
-                                    core.log("discord", f"<{message.guild.me.name}> {chunk}")
+                                    self.ai_channel.log("discord", f"<{message.guild.me.name}> {chunk}")
                                     await asyncio.sleep(0.5)
                     except Exception as e:
                         err_msg = core.detail_error(e) if core.debug else str(e)
@@ -187,12 +197,14 @@ class Client(discord.Client):
 class Discord(core.channel.Channel):
     """Talk to your AI over Discord"""
 
+    dependencies = ["discord.py"]
+
     settings =  {
         "token": {
             "description": "Your discord token. Get it in the [Discord Developer Portal](https://discord.com/developers/applications)",
             "default": None
         },
-        "authorised_user_id": {
+        "authorized_user_id": {
             "description": "Your personal user ID. Get it by enabling *Developer Mode* in Discord (open Settings, then go to Developer, then toggle on Developer Mode), then right clicking your name and clicking/tapping *Copy ID*",
             "default": None
         },
@@ -247,12 +259,12 @@ class Discord(core.channel.Channel):
 
         target_channel_id = self.config.get("target_channel_id")
         if not target_channel_id:
-            core.log(self.name, "Error while sending push message: No target channel ID set. Could not send message! Please configure your target channel.")
+            self.log(self.name, "Error while sending push message: No target channel ID set. Could not send message! Please configure your target channel.")
             return
 
         # split the content into chunk sizes that discord accepts
         content = message.get("content")
-        core.log(f"{self.name} push", content)
+        self.log(f"{self.name} push", content)
         chunks = [content[i:i + MAX_CHARS] for i in range(0, len(content), MAX_CHARS)]
 
         # send into the channel if we have the permissions to
@@ -267,14 +279,14 @@ class Discord(core.channel.Channel):
                         await channel.send(chunk)
                         await asyncio.sleep(0.5)
                 else:
-                    core.log(self.name, "Error while sending push message: Discord bot does not have the required permissions to send messages into the target channel. Please give it the needed permissions!")
+                    self.log(self.name, "Error while sending push message: Discord bot does not have the required permissions to send messages into the target channel. Please give it the needed permissions!")
                     return
 
     async def run(self):
         token = core.config.config.get("channels").get("settings").get("discord").get("token")
 
         if not token:
-            core.log("error", "Discord token not set! Set it up in the webui or by editing the config")
+            self.log("error", "Discord token not set! Set it up in the webui or by editing the config")
             return False
 
         intents = discord.Intents.default()
@@ -284,7 +296,7 @@ class Discord(core.channel.Channel):
         # discordpy really likes to throw useless exceptions. shut up already.
         discord.utils.setup_logging(level=50, root=False)
 
-        core.log("discord", "logging in..")
+        self.log("discord", "logging in..")
 
         try:
             await self._client.start(token)
@@ -292,7 +304,7 @@ class Discord(core.channel.Channel):
             # shut up no one cares about this stupid error
             pass
         except Exception as e:
-            core.log("error", f"error connecting to discord: {e}")
+            self.log("error", f"error connecting to discord: {e}")
 
     async def on_shutdown(self):
         shutdown_message = self.config.get("shutdown_message")

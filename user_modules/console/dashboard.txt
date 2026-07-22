@@ -1,0 +1,16 @@
+NARRATIVE ENGINE — campaign 'default'
+session 0 | round 0 | 2026-07-22 17:58:25
+--------------------------------------------------
+NPCs (with traits)     n/a
+Locations              n/a
+Intrigues              n/a
+NPC drives             n/a
+Info items             n/a
+Graph nodes / edges    0 / 0
+--------------------------------------------------
+scene            (not set)
+present          -
+pinned facts     0
+--------------------------------------------------
+recent log:
+  [17:48:49] === narrative_engine module started, campaign 'default' ===
